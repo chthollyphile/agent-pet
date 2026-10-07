@@ -10,7 +10,7 @@
 set -euo pipefail
 
 REPO_URL=${AGENT_PET_REPO:-https://github.com/chthollyphile/agent-pet.git}
-PLUGIN_ID=lia.pet
+PLUGIN_ID=chthollyphile.agent-pet
 
 zh() { [[ ${LANGUAGE:-${LC_ALL:-${LC_MESSAGES:-${LANG:-}}}} == zh* ]]; }
 say() { if zh; then echo "$1"; else echo "$2"; fi; }

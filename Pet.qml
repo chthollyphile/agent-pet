@@ -38,7 +38,7 @@ Item {
   property bool dragging: false
 
   function log(msg) {
-    console.log("[lia.pet] " + Qt.formatTime(new Date(), "HH:mm:ss") + " pet=" + cfg.id + " " + msg)
+    console.log("[agent-pet] " + Qt.formatTime(new Date(), "HH:mm:ss") + " pet=" + cfg.id + " " + msg)
   }
 
   function imgAt(i) {

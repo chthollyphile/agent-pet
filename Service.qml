@@ -6,7 +6,7 @@ import "lib/work-status.mjs" as WS
 import "lib/usage.mjs" as Usage
 import "lib/i18n.mjs" as I18n
 
-// lia.pet 的状态中枢：配置、Claude Code / Codex 工作状态聚合、用量、LLM、通知、IPC。
+// agent-pet 的状态中枢：配置、Claude Code / Codex 工作状态聚合、用量、LLM、通知、IPC。
 // 每块有宠物的屏幕各一个 PetOverlay（全屏透明 layer-shell 窗口）。
 Scope {
   id: root
@@ -41,7 +41,7 @@ Scope {
     try {
       base = JSON.parse(defaultFile.text())
     } catch (e) {
-      console.warn("[lia.pet] 内置配置解析失败:", e)
+      console.warn("[agent-pet] 内置配置解析失败:", e)
       return
     }
     var merged = Object.assign({}, base)
@@ -55,7 +55,7 @@ Scope {
         Object.assign(merged, user)
       } catch (e) {
         configError = String(e)
-        console.warn("[lia.pet] 用户配置解析失败，使用内置配置:", e)
+        console.warn("[agent-pet] 用户配置解析失败，使用内置配置:", e)
       }
     }
     try {
@@ -223,7 +223,7 @@ Scope {
     onExited: {
       root.omarchyCollector = collectorOut.text.trim()
       root.usageSourceChecked = true
-      console.log("[lia.pet] 用量数据源: " + root.usageSource + (root.usageSource === "omarchy" ? " (" + root.omarchyCollector + ")" : ""))
+      console.log("[agent-pet] 用量数据源: " + root.usageSource + (root.usageSource === "omarchy" ? " (" + root.omarchyCollector + ")" : ""))
     }
   }
 
@@ -387,13 +387,13 @@ Scope {
     onFinished: function(petId, kind, text, meme, failed) {
       if (kind === "summary") {
         if (failed) {
-          console.warn("[lia.pet] 步骤总结失败:", text)
+          console.warn("[agent-pet] 步骤总结失败:", text)
           return
         }
         if (WS.setSummary(root.wsStore, autoLlm.tag, text.replace(/\s+/g, " ").slice(0, 30))) root.refreshWorkStatus()
         return
       }
-      if (failed) console.warn("[lia.pet] 定时碎碎念失败:", text)
+      if (failed) console.warn("[agent-pet] 定时碎碎念失败:", text)
       else root.speak(petId, text, meme, kind)
     }
   }
@@ -594,9 +594,9 @@ Scope {
 
   Component.onCompleted: Quickshell.execDetached(["mkdir", "-p", root.stateDir])
 
-  // ------------------------------------------------------------ IPC：omarchy-shell lia.pet <method> [arg]
+  // ------------------------------------------------------------ IPC：omarchy-shell agent-pet <method> [arg]
   IpcHandler {
-    target: "lia.pet"
+    target: "agent-pet"
 
     function event(json: string): string {
       return root.handleEvent(json)

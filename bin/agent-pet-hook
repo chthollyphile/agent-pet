@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Claude Code / Codex hook 桥接：把 hook 事件转发给 omarchy-shell 里的 lia.pet 插件。
+# Claude Code / Codex hook 桥接：把 hook 事件转发给 omarchy-shell 里的 agent-pet 插件。
 # 用法（hooks 配置里的 command）：agent-pet-hook claude | agent-pet-hook codex
 #
 # 约束：
@@ -44,11 +44,11 @@ event=$(jq -c --arg agent "$agent" --argjson focused "$focused" '{
   focused: $focused
 }' <<<"$payload" 2>/dev/null) || exit 0
 
-# 先交给 Omarchy 里的 lia.pet 插件；没有 Omarchy 或插件没启用时，交给独立模式实例（qs -p <仓库目录>）
+# 先交给 Omarchy 里的 agent-pet 插件；没有 Omarchy 或插件没启用时，交给独立模式实例（qs -p <仓库目录>）
 root=$(cd "$(dirname "$0")/.." && pwd -P)
 (
-  if command -v omarchy-shell >/dev/null && omarchy-shell lia.pet event "$event"; then exit 0; fi
-  qs ipc -p "$root" call lia.pet event "$event"
+  if command -v omarchy-shell >/dev/null && omarchy-shell agent-pet event "$event"; then exit 0; fi
+  qs ipc -p "$root" call agent-pet event "$event"
 ) </dev/null >/dev/null 2>&1 &
 disown
 exit 0

@@ -1,6 +1,6 @@
 # agent-pet
 
-把 [dsh-pet](https://github.com/PC2005-cloud/dsh-pet) 的桌宠移植到 Quickshell，并接入 Claude Code / Codex。可以作为 Omarchy 4 插件（`lia.pet`）运行，也可以只依赖 Quickshell 独立运行（见「独立模式」）。
+把 [dsh-pet](https://github.com/PC2005-cloud/dsh-pet) 的桌宠移植到 Quickshell，并接入 Claude Code / Codex。可以作为 Omarchy 4 插件（`chthollyphile.agent-pet`）运行，也可以只依赖 Quickshell 独立运行（见「独立模式」）。
 
 - 待机、随机动作、转向、行走、点击 Q 弹、拖拽甩抛反弹（物理与抽选逻辑直接复用 dsh-pet 的纯函数）。
 - 工作状态联动：hooks 事件切换思考 / 工作 / 整理 / 等待 / 成功 / 出错 6 档动画和头顶气泡。
@@ -51,8 +51,8 @@ omarchy plugin add https://github.com/chthollyphile/agent-pet.git --enable
 Omarchy 只会 clone 仓库，不会运行任何安装步骤，所以这时还没有动画素材。插件启动后发现缺素材，会弹出一条通知，点“下载”才开始下载，完成后宠物自动出现。也可以手动运行：
 
 ```bash
-~/.config/omarchy/plugins/lia.pet/bin/agent-pet-fetch-assets
-~/.config/omarchy/plugins/lia.pet/bin/agent-pet-install-hooks   # 可选：接入 Claude Code / Codex
+~/.config/omarchy/plugins/chthollyphile.agent-pet/bin/agent-pet-fetch-assets
+~/.config/omarchy/plugins/chthollyphile.agent-pet/bin/agent-pet-install-hooks   # 可选：接入 Claude Code / Codex
 ```
 
 ### 从源码构建（开发）
@@ -63,9 +63,9 @@ Omarchy 只会 clone 仓库，不会运行任何安装步骤，所以这时还�
 git clone https://github.com/PC2005-cloud/dsh-pet.git ../dsh-pet
 npm install
 npm run build                     # lib/shared.mjs + assets/config.json + assets/webp（约 170 MB）
-ln -s "$PWD" ~/.config/omarchy/plugins/lia.pet   # Omarchy 插件模式
+ln -s "$PWD" ~/.config/omarchy/plugins/chthollyphile.agent-pet   # Omarchy 插件模式
 omarchy-shell shell rescanPlugins
-omarchy plugin enable lia.pet
+omarchy plugin enable chthollyphile.agent-pet
 ```
 
 开发注意：
@@ -91,7 +91,7 @@ git add assets.json && git commit -m "chore: update asset release metadata"
 
 ```bash
 qs -p "$PWD"                      # 启动；改动 QML 后 Quickshell 会自动重载
-qs ipc -p "$PWD" call lia.pet state
+qs ipc -p "$PWD" call agent-pet state
 ```
 
 开机启动：Hyprland 在配置里加 `exec-once = qs -p /path/to/agent-pet`，其他环境可写一个 systemd 用户服务。
@@ -100,7 +100,7 @@ qs ipc -p "$PWD" call lia.pet state
 
 - 菜单和对话框用 `Commons/` 里的默认主题。`qs.Commons` 解析到当前 shell 的根目录，所以作为 Omarchy 插件运行时用的是 Omarchy 的主题，独立运行时用这里的。
 - 用量数据：找不到 `omarchy-agent-usage-update` 时自动改用内置采集 `bin/agent-pet-usage`，记录写到 `~/.local/state/agent-pet/usage/`。
-- hook 先尝试 `omarchy-shell lia.pet event`，失败再发给 `qs ipc -p <仓库目录>`，两种模式用同一套 hooks 配置。
+- hook 先尝试 `omarchy-shell agent-pet event`，失败再发给 `qs ipc -p <仓库目录>`，两种模式用同一套 hooks 配置。
 - 不要同时运行两种模式，否则屏幕上会有两只宠物（hooks 事件只会发给 Omarchy 那只）。
 
 ### 接入 Claude Code / Codex
@@ -191,15 +191,15 @@ Codex 第一次遇到新 hook 可能要求审核，在 Codex 里按提示信任�
 ## IPC
 
 ```bash
-omarchy-shell lia.pet state          # JSON：会话、用量、配置状态
-omarchy-shell lia.pet say "你好"
-omarchy-shell lia.pet play 涮火锅
-omarchy-shell lia.pet usage
-omarchy-shell lia.pet whisper        # 会调用一次 LLM
-omarchy-shell lia.pet chat "在吗"    # 会调用一次 LLM
-omarchy-shell lia.pet toggle         # 隐藏 / 显示
-omarchy-shell lia.pet reload
-omarchy-shell lia.pet event '{"agent":"claude","event":"Stop","session":"x","cwd":"/tmp"}'
+omarchy-shell agent-pet state          # JSON：会话、用量、配置状态
+omarchy-shell agent-pet say "你好"
+omarchy-shell agent-pet play 涮火锅
+omarchy-shell agent-pet usage
+omarchy-shell agent-pet whisper        # 会调用一次 LLM
+omarchy-shell agent-pet chat "在吗"    # 会调用一次 LLM
+omarchy-shell agent-pet toggle         # 隐藏 / 显示
+omarchy-shell agent-pet reload
+omarchy-shell agent-pet event '{"agent":"claude","event":"Stop","session":"x","cwd":"/tmp"}'
 ```
 
 ## 已知限制
