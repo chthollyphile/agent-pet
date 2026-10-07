@@ -585,6 +585,11 @@ Item {
       pet.applyWorkStatus()
     }
 
+    // 改配置（如 workStatusDetail）后立即按新设置重算气泡；档位没变，不会重播动画
+    function onConfigChanged() {
+      pet.applyWorkStatus()
+    }
+
     function onSpeak(petId, text, meme, kind) {
       if (petId !== "" && petId !== pet.cfg.id) return
       if (kind === "whisper" || kind === "chat") {
