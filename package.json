@@ -1,0 +1,14 @@
+{
+  "name": "omar-pet",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:shared": "node tools/build-shared.mjs",
+    "build:config": "node tools/build-config.mjs",
+    "build:assets": "tools/build-assets.sh",
+    "build": "npm run build:shared && npm run build:config && npm run build:assets"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}
