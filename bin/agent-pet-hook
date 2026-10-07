@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Claude Code / Codex hook 桥接：把 hook 事件转发给 omarchy-shell 里的 lia.pet 插件。
-# 用法（hooks 配置里的 command）：omar-pet-hook claude | omar-pet-hook codex
+# 用法（hooks 配置里的 command）：agent-pet-hook claude | agent-pet-hook codex
 #
 # 约束：
 # - stdout 不输出任何内容（UserPromptSubmit / SessionStart 的 stdout 会被注入模型上下文）；
 # - 始终 exit 0，且立即返回：真正的 IPC 调用放到后台，不拖慢 agent。
-# - OMAR_PET_INTERNAL=1 时直接退出：宠物自己调用 claude -p / codex exec 时不回灌事件。
+# - AGENT_PET_INTERNAL=1 时直接退出：宠物自己调用 claude -p / codex exec 时不回灌事件。
 
-[[ ${OMAR_PET_INTERNAL:-} == 1 ]] && exit 0
+[[ ${AGENT_PET_INTERNAL:-} == 1 ]] && exit 0
 agent=${1:-claude}
 payload=$(cat)
 

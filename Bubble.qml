@@ -7,6 +7,10 @@ Item {
 
   property var content: null // { text, meme }
   property url memeDir
+  // 字体：fontFile（字体文件路径）> fontFamily（已安装字体名）> 内置上首软糖体
+  property string fontFamily: ""
+  property string fontFile: ""
+  property int fontSize: 14
   property real tailX: width / 2
   property real maxTextWidth: 240
 
@@ -28,9 +32,13 @@ Item {
   height: body.height + tail.height / 2
 
   FontLoader {
-    id: candy
-    source: Qt.resolvedUrl("assets/fonts/上首软糖体.ttf")
+    id: loader
+    source: bubble.fontFile ? "file://" + bubble.fontFile
+      : bubble.fontFamily ? "" : Qt.resolvedUrl("assets/fonts/上首软糖体.ttf")
   }
+
+  readonly property string resolvedFamily: loader.status === FontLoader.Ready ? loader.name
+    : bubble.fontFamily || "sans-serif"
 
   Rectangle {
     id: body
@@ -50,8 +58,8 @@ Item {
         id: label
         text: bubble.shownContent ? bubble.shownContent.text : ""
         color: "#2b2b2b"
-        font.family: candy.status === FontLoader.Ready ? candy.name : "sans-serif"
-        font.pixelSize: 14
+        font.family: bubble.resolvedFamily
+        font.pixelSize: bubble.fontSize
         lineHeight: 1.25
         wrapMode: Text.Wrap
         width: Math.min(implicitWidth, bubble.maxTextWidth)

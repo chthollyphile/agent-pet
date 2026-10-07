@@ -307,5 +307,11 @@
   "notify": {
     "onlyWhenUnfocused": true
   },
+  "clickAction": "react",
+  "bubbleFont": {
+    "family": "",
+    "file": "",
+    "size": 14
+  },
   "layer": "top"
 }

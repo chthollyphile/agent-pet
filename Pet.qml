@@ -464,7 +464,12 @@ Item {
         else pet.startThrow(0, 0) // 原地松手也让它落回地面
         return
       }
-      // 点击：回应动画 + Q 弹
+      // 点击：clickAction = "usage" 查看用量（Q 弹 + 用量动画与气泡）；默认 "react" 播点击回应动画 + Q 弹
+      if (pet.service.config.clickAction === "usage") {
+        pet.startSquash(Shared.SQ_SQUASH)
+        pet.service.showUsage(true)
+        return
+      }
       if (pet.anims.clicks.length) {
         pet.pendingSquash = true
         pet.play(Shared.pick(pet.anims.clicks), true)
@@ -561,6 +566,10 @@ Item {
     id: bubble
     content: pet.bubbleContent
     memeDir: Qt.resolvedUrl("assets/memes/")
+    readonly property var fontCfg: pet.service.config.bubbleFont || ({})
+    fontFamily: fontCfg.family || ""
+    fontFile: fontCfg.file ? String(fontCfg.file).replace(/^~(?=\/)/, pet.service.home) : ""
+    fontSize: Number(fontCfg.size) > 0 ? Number(fontCfg.size) : 14
     // 头顶居中，夹在屏幕内
     readonly property real headY: pet.bottomPad + Shared.HIT_BOX.y0 / 360 * pet.boxH
     x: Math.max(-pet.x + 4, Math.min(pet.size / 2 - width / 2, pet.areaW - pet.x - width - 4))

@@ -1,4 +1,4 @@
-// dsh-pet 的 assets/config.jsonc → assets/config.json（去注释），并套上 omar-pet 的默认值。
+// dsh-pet 的 assets/config.jsonc → assets/config.json（去注释），并套上 agent-pet 的默认值。
 // 用法：node tools/build-config.mjs [dsh-pet 插件目录]
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
@@ -25,6 +25,10 @@ Object.assign(cfg, {
   usage: { agent: 'auto' },
   // true = 只有发事件的终端不在前台时才弹系统通知
   notify: { onlyWhenUnfocused: true },
+  // 左键点击宠物：react = 播点击回应动画；usage = 查看用量（余额动画 + 各窗口重置倒计时气泡）
+  clickAction: 'react',
+  // 气泡字体：file（字体文件路径，支持 ~/）优先于 family（已安装字体名，见 fc-list）；都留空 = 内置上首软糖体
+  bubbleFont: { family: '', file: '', size: 14 },
   // 宠物所在的 layer-shell 层：top（普通窗口之上、全屏应用之下）或 overlay（永远置顶）
   layer: 'top',
 });

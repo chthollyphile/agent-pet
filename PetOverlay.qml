@@ -21,7 +21,7 @@ PanelWindow {
   // Normal + exclusiveZone 0：窗口只占可用区域，不压 bar；窗口底边就是宠物的地面
   exclusionMode: ExclusionMode.Normal
   exclusiveZone: 0
-  WlrLayershell.namespace: "omar-pet"
+  WlrLayershell.namespace: "agent-pet"
   WlrLayershell.layer: service.config.layer === "overlay" ? WlrLayer.Overlay : WlrLayer.Top
   WlrLayershell.keyboardFocus: chat.open || menu.open ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
   visible: !service.hidden

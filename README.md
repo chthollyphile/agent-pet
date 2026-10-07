@@ -1,11 +1,11 @@
-# omar-pet
+# agent-pet
 
 把 [dsh-pet](https://github.com/PC2005-cloud/dsh-pet) 的桌宠移植成 Omarchy 4 的 Quickshell 插件（`lia.pet`），并接入 Claude Code / Codex：
 
 - 待机、随机动作、转向、行走、点击 Q 弹、拖拽甩抛反弹（物理与抽选逻辑直接复用 dsh-pet 的纯函数）。
 - 工作状态联动：hooks 事件切换思考 / 工作 / 整理 / 等待 / 成功 / 出错 6 档动画和头顶气泡。
 - 等待提醒：需要确认、任务完成、出错时冒气泡；发事件的终端不在前台时再发系统通知。
-- 用量动画：读取 `omarchy.agents` 生成的用量记录，按最紧张窗口的百分比播放余额档位动画。
+- 用量动画：读取 `omarchy.agents` 生成的用量记录，按最紧张窗口的百分比播放余额档位动画；气泡列出每个窗口的用量和重置倒计时（5 小时窗口精确到分钟，周额度精确到小时）。
 - 碎碎念 / 对话：调用 `claude -p` 或 `codex exec`。**默认只在右键菜单或 IPC 显式触发时调用**；定时碎碎念由 `whisperAuto` 开启，默认关闭。
 
 ## 致谢
@@ -19,7 +19,7 @@
 - **纯逻辑代码**：`src/shared` 中的物理（拖拽 / 甩抛 / Q 弹）、动画抽选、移动规划、菜单树，由 `tools/build-shared.mjs` 原样打包进 `lib/shared.mjs`。
 - 工作状态 6 档的设计与档位顺序。
 
-omar-pet 新写的部分：Quickshell / Omarchy 插件外壳（QML）、Claude Code / Codex hooks 桥接、用量与 LLM 调用。许可证见 [LICENSE](LICENSE)，保留了 dsh-pet 的版权声明。
+agent-pet 新写的部分：Quickshell / Omarchy 插件外壳（QML）、Claude Code / Codex hooks 桥接、用量与 LLM 调用。许可证见 [LICENSE](LICENSE)，保留了 dsh-pet 的版权声明。
 
 ## 安装
 
@@ -45,17 +45,17 @@ omarchy plugin enable lia.pet
 ### 接入 Claude Code / Codex
 
 ```bash
-bin/omar-pet-install-hooks             # 写入 ~/.claude/settings.json 和 ~/.codex/hooks.json（先自动备份）
-bin/omar-pet-install-hooks --uninstall # 移除
+bin/agent-pet-install-hooks             # 写入 ~/.claude/settings.json 和 ~/.codex/hooks.json（先自动备份）
+bin/agent-pet-install-hooks --uninstall # 移除
 ```
 
 Codex 第一次遇到新 hook 可能要求审核，在 Codex 里按提示信任即可。
 
-`bin/omar-pet-hook` 不向 stdout 输出任何内容，立即 `exit 0`，IPC 在后台完成（约 40 ms）。宠物自己调用 LLM 时设置 `OMAR_PET_INTERNAL=1`，hook 看到后直接退出，避免自己触发自己。
+`bin/agent-pet-hook` 不向 stdout 输出任何内容，立即 `exit 0`，IPC 在后台完成（约 40 ms）。宠物自己调用 LLM 时设置 `AGENT_PET_INTERNAL=1`，hook 看到后直接退出，避免自己触发自己。
 
 ## 配置
 
-内置默认值在 `assets/config.json`（由 dsh-pet 的 `config.jsonc` 生成）。在 `~/.config/omar-pet/config.jsonc` 中覆盖：顶层字段整段替换，保存后立即生效。dsh-pet 原有字段（`animations`、`physics`、`pets`、`workStatusTexts`、`memes` 等）语义不变。新增字段：
+内置默认值在 `assets/config.json`（由 dsh-pet 的 `config.jsonc` 生成）。在 `~/.config/agent-pet/config.jsonc` 中覆盖：顶层字段整段替换，保存后立即生效。dsh-pet 原有字段（`animations`、`physics`、`pets`、`workStatusTexts`、`memes` 等）语义不变。新增字段：
 
 | 字段 | 默认 | 说明 |
 |---|---|---|
@@ -64,6 +64,8 @@ Codex 第一次遇到新 hook 可能要求审核，在 Codex 里按提示信任�
 | `agents` | `{"claude":true,"codex":true}` | 接收哪些 agent 的事件 |
 | `usage.agent` | `"auto"` | 用量动画读哪个 agent；auto = 最近发来事件的那个 |
 | `notify.onlyWhenUnfocused` | `true` | 只在发事件的终端不在前台时通知 |
+| `clickAction` | `"react"` | 左键点击宠物：`react` 播点击回应动画；`usage` 查看用量 |
+| `bubbleFont` | `{"family":"","file":"","size":14}` | 气泡字体。`file`（字体文件路径，支持 `~/`）优先于 `family`（已安装字体名，见 `fc-list : family`）；都留空 = 内置上首软糖体。菜单和对话框跟随 Omarchy 主题字体 |
 | `layer` | `"top"` | `overlay` = 全屏应用之上也显示 |
 | `pets[].screen` | 第一块屏 | 宠物所在显示器名（`hyprctl monitors`） |
 

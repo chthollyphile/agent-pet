@@ -3,7 +3,7 @@ import Quickshell
 import Quickshell.Io
 
 // 无头调用 claude -p / codex exec 生成一句话。一次只跑一个请求。
-// OMAR_PET_INTERNAL=1：omar-pet-hook 看到它直接退出，宠物自己的调用不会回灌成工作状态事件。
+// AGENT_PET_INTERNAL=1：agent-pet-hook 看到它直接退出，宠物自己的调用不会回灌成工作状态事件。
 Scope {
   id: llm
 
@@ -65,7 +65,7 @@ Scope {
   Process {
     id: proc
     workingDirectory: llm.stateDir
-    environment: ({ OMAR_PET_INTERNAL: "1" })
+    environment: ({ AGENT_PET_INTERNAL: "1" })
     stdout: StdioCollector { id: out }
     stderr: StdioCollector { id: err }
 

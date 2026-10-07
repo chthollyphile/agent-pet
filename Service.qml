@@ -17,8 +17,8 @@ Scope {
 
   readonly property string home: Quickshell.env("HOME")
   readonly property string pluginDir: decodeURIComponent(String(Qt.resolvedUrl(".")).replace(/^file:\/\//, "").replace(/\/$/, ""))
-  readonly property string userConfigPath: home + "/.config/omar-pet/config.jsonc"
-  readonly property string stateDir: home + "/.local/state/omar-pet"
+  readonly property string userConfigPath: home + "/.config/agent-pet/config.jsonc"
+  readonly property string stateDir: home + "/.local/state/agent-pet"
   readonly property string usageDir: home + "/.local/state/omarchy/agents/usage"
 
   // ------------------------------------------------------------ 配置
@@ -158,7 +158,7 @@ Scope {
     var project = WS.projectName(entry.cwd)
     var body = entry.message || (entry.tool ? entry.tool : "")
     Quickshell.execDetached([
-      "notify-send", "-a", "omar-pet",
+      "notify-send", "-a", "agent-pet",
       "-i", root.pluginDir + "/assets/pic/notify-" + notifyIcons[entry.state] + ".png",
       agentName + (project ? " · " + project : "") + " · " + title,
       body
