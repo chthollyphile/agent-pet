@@ -7,7 +7,7 @@
 #
 # 步骤：检查依赖 → 安装插件（Omarchy 用 `omarchy plugin add` 安装发布仓库 omarchy-agent-pet，
 #      否则 clone 到 ~/.local/share/agent-pet，
-#      作为独立 Quickshell 实例运行）→ 下载动画素材 → 接入 Claude Code / Codex hooks → 启用 / 启动
+#      作为独立 Quickshell 实例运行）→ 接入 Claude Code / Codex hooks → 启用 / 启动
 set -euo pipefail
 
 REPO_URL=${AGENT_PET_REPO:-https://github.com/chthollyphile/agent-pet.git}
@@ -31,7 +31,7 @@ ask() {
 # ---------------------------------------------------------------- 依赖
 step "检查依赖" "Checking dependencies"
 missing=()
-for cmd in git jq curl tar sha256sum notify-send; do
+for cmd in git jq notify-send; do
   command -v "$cmd" >/dev/null || missing+=("$cmd")
 done
 command -v qs >/dev/null || command -v quickshell >/dev/null || missing+=("quickshell")
@@ -80,17 +80,6 @@ else
       git clone "$REPO_URL" "$dir"
     fi
   fi
-fi
-
-# ---------------------------------------------------------------- 素材
-step "动画素材" "Animation assets"
-set +e
-"$dir/bin/agent-pet-fetch-assets"
-fetch_status=$?
-set -e
-if (( fetch_status != 0 )); then
-  say "素材未安装。之后可以运行：$dir/bin/agent-pet-fetch-assets" \
-    "Assets are not installed. Run later: $dir/bin/agent-pet-fetch-assets"
 fi
 
 # ---------------------------------------------------------------- hooks

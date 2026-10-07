@@ -17,7 +17,6 @@ for dir in memes pic; do
   rm -rf "${ROOT:?}/assets/$dir"
   cp -r "$SRC/assets/$dir" "$ROOT/assets/$dir"
 done
-cp "$SRC/assets/logo.png" "$ROOT/assets/logo.png"
 
 shopt -s nullglob
 files=("$SRC"/assets/webm/*.webm)

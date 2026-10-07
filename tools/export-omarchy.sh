@@ -26,7 +26,7 @@ target=${target:-$ROOT/../omarchy-agent-pet}
 # 插件运行需要的文件。独立模式（shell.qml、Commons/）、安装脚本和构建工具不导出：
 # 作为 Omarchy 插件运行时 qs.Commons 解析到 Omarchy 自己的 Commons。
 runtime=(
-  manifest.json LICENSE assets.json assets/config.json
+  manifest.json LICENSE assets
   Service.qml Pet.qml PetOverlay.qml PetMenu.qml ChatInput.qml Bubble.qml Llm.qml
   lib bin
 )
@@ -34,7 +34,6 @@ runtime=(
 extra=(
   packaging/omarchy/README.md:README.md
   packaging/omarchy/README.zh-CN.md:README.zh-CN.md
-  packaging/omarchy/gitignore:.gitignore
   docs/screenshot.png:preview.png
   docs/screenshot.zh-CN.png:docs/screenshot.zh-CN.png
 )

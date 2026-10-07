@@ -21,7 +21,7 @@ Agent Pet 是一只运行在 Quickshell 上的桌面宠物，会随 Claude Code 
 
 - [Quickshell](https://quickshell.org/)，以及支持 layer-shell 的 Wayland 混成器（Hyprland、Sway、niri 等；GNOME 不支持）
 - `qt6-imageformats`：Qt 的 WebP 解码插件（Arch：`sudo pacman -S qt6-imageformats`）。安装后需要重启正在运行的 Quickshell。
-- `jq`、`curl`、`notify-send`
+- `jq`、`notify-send`
 - 非 Omarchy 环境下采集用量需要 `python3`
 - 工作状态联动需要 Claude Code 和/或 Codex CLI
 
@@ -33,13 +33,12 @@ Agent Pet 是一只运行在 Quickshell 上的桌面宠物，会随 Claude Code 
 bash <(curl -fsSL https://raw.githubusercontent.com/chthollyphile/agent-pet/main/install.sh)
 ```
 
-安装脚本在每一步执行前都会询问：
+仓库包含动画素材，下载量约 180 MB。安装脚本在每一步执行前都会询问：
 
 1. 检查依赖。
 2. 安装插件：检测到 Omarchy 时使用 `omarchy plugin add` 安装插件发布仓库（会显示 Omarchy 自身的安全提示）；否则 clone 到 `~/.local/share/agent-pet`，以独立模式运行。设置 `AGENT_PET_MODE=standalone` 可在 Omarchy 上同样使用独立模式。
-3. 下载动画素材（约 177 MB，来自本仓库的 GitHub Release，下载后校验 sha256）。
-4. 接入 Claude Code / Codex hooks（修改配置前自动备份）。
-5. 启用插件；独立模式下启动实例，并给出开机启动的配置方法。
+3. 接入 Claude Code / Codex hooks（修改配置前自动备份）。
+4. 启用插件；独立模式下启动实例，并给出开机启动的配置方法。
 
 ### 通过 `omarchy plugin add` 安装
 
@@ -49,11 +48,10 @@ omarchy plugin add https://github.com/chthollyphile/omarchy-agent-pet --enable
 
 [omarchy-agent-pet](https://github.com/chthollyphile/omarchy-agent-pet) 是插件发布仓库，由本仓库的 `tools/export-omarchy.sh` 生成，只包含插件运行所需的文件。
 
-`omarchy plugin add` 只会 clone 仓库，不执行任何安装步骤，因此首次启用时还没有动画素材。插件检测到素材缺失后会发送一条通知，点击“下载”后才开始下载，完成后宠物会自动出现。也可以手动执行：
+动画素材包含在仓库里，启用插件后宠物会直接出现。`omarchy plugin add` 不执行任何安装步骤，需要接入 Claude Code / Codex 时请手动安装 hooks：
 
 ```bash
-~/.config/omarchy/plugins/chthollyphile.agent-pet/bin/agent-pet-fetch-assets
-~/.config/omarchy/plugins/chthollyphile.agent-pet/bin/agent-pet-install-hooks   # 可选：接入 Claude Code / Codex
+~/.config/omarchy/plugins/chthollyphile.agent-pet/bin/agent-pet-install-hooks
 ```
 
 ### 独立模式
@@ -165,7 +163,6 @@ omarchy-shell agent-pet whisper         # 调用一次模型
 omarchy-shell agent-pet chat "在吗"     # 调用一次模型
 omarchy-shell agent-pet toggle          # 隐藏 / 显示
 omarchy-shell agent-pet reload
-omarchy-shell agent-pet fetchAssets     # 下载缺失的动画素材
 ```
 
 ## 隐私与模型调用
@@ -173,7 +170,7 @@ omarchy-shell agent-pet fetchAssets     # 下载缺失的动画素材
 - **模型调用**：只有以下情况会调用模型：右键菜单中的“碎碎念”和“对话”、IPC 的 `whisper` 和 `chat`，以及用户主动开启的 `whisperAuto` 与 `stepSummary.mode = "model"`。宠物自身的模型调用不会触发 hooks。
 - **hooks 转发的数据**：只有事件名、会话 ID、项目路径、工具名、工具参数第一行（最多 120 字）、通知文本（最多 200 字）、本轮请求的前 300 字、结束时的最后一条回复（最多 2000 字），以及会话记录路径。这些数据只通过本机 IPC 传给 Quickshell，不会离开本机。
 - **会话记录**：仅在 `stepSummary.mode = "transcript"` 时读取，每次只读取文件末尾 400 KB。
-- **网络访问**：下载动画素材，以及非 Omarchy 环境下查询 Claude / Codex 的额度。额度查询只读取用量，不消耗额度。
+- **网络访问**：仅在非 Omarchy 环境下查询 Claude / Codex 的额度。额度查询只读取用量，不消耗额度。
 
 ## 已知限制
 
@@ -190,7 +187,7 @@ omarchy-shell agent-pet fetchAssets     # 下载缺失的动画素材
 ```bash
 git clone https://github.com/PC2005-cloud/dsh-pet.git ../dsh-pet
 npm install
-npm run build        # 生成 lib/shared.mjs、assets/config.json、assets/webp
+npm run build        # 生成 lib/shared.mjs、assets/config.json、assets/webp、assets/memes、assets/pic
 ln -s "$PWD" ~/.config/omarchy/plugins/chthollyphile.agent-pet
 omarchy-shell shell rescanPlugins
 omarchy plugin enable chthollyphile.agent-pet
@@ -201,17 +198,7 @@ omarchy plugin enable chthollyphile.agent-pet
 - 插件目录为符号链接时，Omarchy 不会监视其中的改动。
 - `omarchy-shell shell rescanPlugins` 只会重新加载 `Service.qml`，`Pet.qml` 等子组件仍使用已编译的旧版本。修改子组件后请执行 `omarchy-restart-shell`，或改用独立模式开发（支持自动重载）。
 
-### 发布素材
-
-动画素材不纳入 git，而是作为 GitHub Release 附件发布。下载地址、sha256 和大小记录在 `assets.json` 中：
-
-```bash
-tools/pack-assets.sh                                   # 生成 dist/agent-pet-assets-v1.tar 并更新 assets.json
-gh release create assets-v1 dist/agent-pet-assets-v1.tar --title "Assets v1"
-git add assets.json && git commit -m "chore: update asset release metadata"
-```
-
-打包结果可复现：相同的素材得到相同的 sha256。素材更新时，使用 `tools/pack-assets.sh --version 2` 发布新版本。
+构建出的 `assets/` 纳入 git。每次提交的素材都会永久留在历史里，每次安装都要 clone 下来，因此只在素材定稿后提交。
 
 ### 发布 Omarchy 插件
 
@@ -222,7 +209,7 @@ tools/export-omarchy.sh --commit                       # 写入 ../omarchy-agent
 git -C ../omarchy-agent-pet push
 ```
 
-导出内容为插件的 QML 文件、`lib/`、`bin/`、`assets.json`、`assets/config.json` 和 `LICENSE`，加上 `packaging/omarchy/` 与 `docs/` 中发布仓库专用的 README、`.gitignore` 和预览图。独立模式、安装脚本和构建工具只留在本仓库。推送后，通过插件市场的 plugin verification 表单申请验证新的 commit。
+导出内容为插件的 QML 文件、`lib/`、`bin/`、`assets/` 和 `LICENSE`，加上 `packaging/omarchy/` 与 `docs/` 中发布仓库专用的 README 和预览图。独立模式、安装脚本和构建工具只留在本仓库。推送后，通过插件市场的 plugin verification 表单申请验证新的 commit。
 
 ### 目录结构
 
@@ -236,17 +223,17 @@ git -C ../omarchy-agent-pet push
 | `lib/work-status.mjs`、`lib/usage.mjs`、`lib/i18n.mjs`、`lib/jsonc.mjs` | 事件聚合、用量解析、界面文本、JSONC 解析 |
 | `shell.qml`、`Commons/` | 独立模式的入口与默认主题 |
 | `install.sh` | 安装脚本 |
-| `bin/` | hook 转发与安装、素材下载、会话记录读取、内置用量采集 |
-| `tools/` | 素材、共享逻辑、默认配置的构建脚本，素材打包，以及 Omarchy 插件导出 |
-| `packaging/omarchy/` | 插件发布仓库的 README 和 `.gitignore` |
-| `assets.json` | 素材 Release 的下载地址、sha256 与大小 |
+| `bin/` | hook 转发与安装、会话记录读取、内置用量采集 |
+| `assets/` | 默认配置、动画（`webp/`）、表情包（`memes/`）与通知图标（`pic/`） |
+| `tools/` | 素材、共享逻辑、默认配置的构建脚本，以及 Omarchy 插件导出 |
+| `packaging/omarchy/` | 插件发布仓库的 README |
 | `docs/` | 截图 |
 
 ## 致谢与许可证
 
 **[dsh-pet](https://github.com/PC2005-cloud/dsh-pet)**（MIT，© PC2005-cloud）：本项目的角色、动画与桌宠逻辑来自 dsh-pet，感谢原作者 [@PC2005-cloud](https://github.com/PC2005-cloud)。具体包括：
 
-- 106 段透明动画、表情包与通知图标。本仓库不包含这些文件，由 dsh-pet 的素材转码生成，并通过 Release 分发。
+- `assets/` 下的 106 段透明动画、表情包与通知图标，由 dsh-pet 的素材转码生成。
 - 默认配置：动画池、权重、物理参数、工作状态文案与人设提示词。
 - `src/shared` 中的物理、动画抽选、移动规划与菜单树，原样打包为 `lib/shared.mjs`。
 - 6 种工作状态的设计。

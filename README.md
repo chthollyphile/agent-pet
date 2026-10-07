@@ -21,7 +21,7 @@ The character, animations, and core pet behavior are ported from [dsh-pet](https
 
 - [Quickshell](https://quickshell.org/) and a Wayland compositor with layer-shell support (Hyprland, Sway, niri, …; GNOME is not supported)
 - `qt6-imageformats` for WebP decoding in Qt (Arch: `sudo pacman -S qt6-imageformats`). Restart any running Quickshell instance after installing it.
-- `jq`, `curl`, `notify-send`
+- `jq`, `notify-send`
 - `python3` for usage collection outside Omarchy
 - Claude Code and/or the Codex CLI for work-status integration
 
@@ -33,13 +33,12 @@ The character, animations, and core pet behavior are ported from [dsh-pet](https
 bash <(curl -fsSL https://raw.githubusercontent.com/chthollyphile/agent-pet/main/install.sh)
 ```
 
-The installer asks before each step:
+The repository includes the animation assets, so the download is about 180 MB. The installer asks before each step:
 
 1. Check dependencies.
 2. Install the plugin: with `omarchy plugin add` from the plugin release repository when Omarchy is present (Omarchy shows its own security prompt), otherwise as a standalone instance cloned to `~/.local/share/agent-pet`. Set `AGENT_PET_MODE=standalone` to use standalone mode on Omarchy as well.
-3. Download the animation assets (about 177 MB from this repository's GitHub Releases, verified with sha256).
-4. Install the Claude Code / Codex hooks (configuration files are backed up first).
-5. Enable the plugin, or start the standalone instance and show how to launch it at login.
+3. Install the Claude Code / Codex hooks (configuration files are backed up first).
+4. Enable the plugin, or start the standalone instance and show how to launch it at login.
 
 ### Install with `omarchy plugin add`
 
@@ -49,11 +48,10 @@ omarchy plugin add https://github.com/chthollyphile/omarchy-agent-pet --enable
 
 [omarchy-agent-pet](https://github.com/chthollyphile/omarchy-agent-pet) is the plugin release repository: it is generated from this repository by `tools/export-omarchy.sh` and contains only the files the plugin needs at runtime.
 
-`omarchy plugin add` only clones the repository and runs no install steps, so the animation assets are not present yet. When the plugin detects this, it sends a notification; the download starts only after you click **Download**, and the pet appears when it finishes. You can also run the steps manually:
+The animation assets are part of the repository, so the pet appears as soon as the plugin is enabled. `omarchy plugin add` runs no install steps; to connect Claude Code / Codex, install the hooks yourself:
 
 ```bash
-~/.config/omarchy/plugins/chthollyphile.agent-pet/bin/agent-pet-fetch-assets
-~/.config/omarchy/plugins/chthollyphile.agent-pet/bin/agent-pet-install-hooks   # optional: Claude Code / Codex
+~/.config/omarchy/plugins/chthollyphile.agent-pet/bin/agent-pet-install-hooks
 ```
 
 ### Standalone mode
@@ -165,7 +163,6 @@ omarchy-shell agent-pet whisper         # calls a model once
 omarchy-shell agent-pet chat "Hi there" # calls a model once
 omarchy-shell agent-pet toggle          # hide / show
 omarchy-shell agent-pet reload
-omarchy-shell agent-pet fetchAssets     # download missing animation assets
 ```
 
 ## Privacy and model usage
@@ -173,7 +170,7 @@ omarchy-shell agent-pet fetchAssets     # download missing animation assets
 - **Model calls** happen only for the context-menu **Murmur** and **Chat** actions, the `whisper` and `chat` IPC methods, and the opt-in `whisperAuto` and `stepSummary.mode = "model"` settings. The pet's own model calls never trigger hooks.
 - **Data forwarded by hooks** is limited to the event name, session ID, project path, tool name, the first line of the tool arguments (up to 120 characters), notification text (up to 200), the first 300 characters of the turn's prompt, the final reply when a turn ends (up to 2000), and the transcript path. It travels over local IPC to Quickshell and never leaves your machine.
 - **Session transcripts** are read only when `stepSummary.mode = "transcript"`, and only the last 400 KB each time.
-- **Network access** is used to download the animation assets and, outside Omarchy, to query Claude / Codex rate limits. Limit queries only read usage and do not consume any quota.
+- **Network access** is used only outside Omarchy, to query Claude / Codex rate limits. Limit queries only read usage and do not consume any quota.
 
 ## Known limitations
 
@@ -190,7 +187,7 @@ The animation assets are transcoded from dsh-pet's source videos. You need the d
 ```bash
 git clone https://github.com/PC2005-cloud/dsh-pet.git ../dsh-pet
 npm install
-npm run build        # builds lib/shared.mjs, assets/config.json, assets/webp
+npm run build        # builds lib/shared.mjs, assets/config.json, assets/webp, assets/memes, assets/pic
 ln -s "$PWD" ~/.config/omarchy/plugins/chthollyphile.agent-pet
 omarchy-shell shell rescanPlugins
 omarchy plugin enable chthollyphile.agent-pet
@@ -201,17 +198,7 @@ Notes:
 - Omarchy does not watch a symlinked plugin directory for changes.
 - `omarchy-shell shell rescanPlugins` reloads only `Service.qml`; components such as `Pet.qml` keep their previously compiled version. Run `omarchy-restart-shell` after changing them, or develop in standalone mode, which reloads automatically.
 
-### Publishing assets
-
-The animation assets are not stored in git. They are published as a GitHub Release attachment, and `assets.json` records the download URL, sha256, and size:
-
-```bash
-tools/pack-assets.sh                                   # builds dist/agent-pet-assets-v1.tar and updates assets.json
-gh release create assets-v1 dist/agent-pet-assets-v1.tar --title "Assets v1"
-git add assets.json && git commit -m "chore: update asset release metadata"
-```
-
-Packing is reproducible: the same assets always produce the same sha256. When the assets change, publish a new version with `tools/pack-assets.sh --version 2`.
+The built assets under `assets/` are committed. Every committed version stays in the history that each install clones, so commit asset changes only when they are final.
 
 ### Publishing the Omarchy plugin
 
@@ -222,7 +209,7 @@ tools/export-omarchy.sh --commit                       # writes ../omarchy-agent
 git -C ../omarchy-agent-pet push
 ```
 
-The export contains the plugin QML files, `lib/`, `bin/`, `assets.json`, `assets/config.json`, and `LICENSE`, plus the release repository's own README, `.gitignore`, and preview image from `packaging/omarchy/` and `docs/`. Standalone mode, the installer, and build tools stay here. After pushing, request verification of the new commit through the marketplace's plugin verification form.
+The export contains the plugin QML files, `lib/`, `bin/`, `assets/`, and `LICENSE`, plus the release repository's own README and preview image from `packaging/omarchy/` and `docs/`. Standalone mode, the installer, and build tools stay here. After pushing, request verification of the new commit through the marketplace's plugin verification form.
 
 ### Project layout
 
@@ -236,17 +223,17 @@ The export contains the plugin QML files, `lib/`, `bin/`, `assets.json`, `assets
 | `lib/work-status.mjs`, `lib/usage.mjs`, `lib/i18n.mjs`, `lib/jsonc.mjs` | Event aggregation, usage parsing, UI strings, JSONC parsing |
 | `shell.qml`, `Commons/` | Standalone entry point and default theme |
 | `install.sh` | Installer |
-| `bin/` | Hook bridge and installer, asset download, transcript reader, built-in usage collector |
-| `tools/` | Build scripts for assets, shared logic, and default configuration; asset packing; Omarchy plugin export |
-| `packaging/omarchy/` | README and `.gitignore` for the plugin release repository |
-| `assets.json` | Download URL, sha256, and size of the asset release |
+| `bin/` | Hook bridge and installer, transcript reader, built-in usage collector |
+| `assets/` | Default configuration, animations (`webp/`), stickers (`memes/`), and notification icons (`pic/`) |
+| `tools/` | Build scripts for assets, shared logic, and default configuration; Omarchy plugin export |
+| `packaging/omarchy/` | README for the plugin release repository |
 | `docs/` | Screenshots |
 
 ## Credits and license
 
 **[dsh-pet](https://github.com/PC2005-cloud/dsh-pet)** (MIT, © PC2005-cloud): the character, animations, and pet behavior come from dsh-pet. Many thanks to [@PC2005-cloud](https://github.com/PC2005-cloud). Specifically:
 
-- The 106 transparent animations, stickers, and notification icons. They are not stored in this repository; they are transcoded from dsh-pet's assets and distributed through Releases.
+- The 106 transparent animations, stickers, and notification icons under `assets/`, transcoded from dsh-pet's assets.
 - The default configuration: animation pools, weights, physics parameters, work-status texts, and persona prompt.
 - The physics, animation picking, movement planning, and menu tree from `src/shared`, bundled unchanged into `lib/shared.mjs`.
 - The design of the six work states.
