@@ -610,6 +610,10 @@ Item {
     }
   }
 
+  // 当前展示的会话 + 档位；只有它变化才切动画，工具 / 命令 / 总结变化只刷新气泡
+  property string wsSig: ""
+  property string wsLine: ""
+
   function applyWorkStatus() {
     if (cfg.workStatusEnabled === false) return
     var ws = service.workStatus
@@ -617,25 +621,39 @@ Item {
       // 没有活跃会话：正在循环的状态动画播完这一遍就回随机链
       once = true
       wsBubble = null
+      wsSig = ""
       return
     }
     var idx = WS.stateIndex(ws.state)
-    var texts = service.config.workStatusTexts || []
-    var line = texts[idx] && texts[idx].length ? texts[idx][Math.floor(Math.random() * texts[idx].length)] : ""
-    var project = WS.projectName(ws.cwd)
-    var agentName = ws.agent === "codex" ? "Codex" : "Claude"
-    var head = agentName + (project ? " · " + project : "")
-    if (ws.state === "waiting" && ws.tool) line += "（" + ws.tool + "）"
-    wsBubble = line ? { text: head + "\n" + line, meme: "" } : null
-    if (WS.isTerminal(ws.state)) wsBubbleTimer.restart()
-    else wsBubbleTimer.stop()
+    var terminal = WS.isTerminal(ws.state)
+    var sig = ws.key + "|" + ws.state
+    var changed = sig !== wsSig
+    wsSig = sig
+    if (changed) {
+      var texts = service.config.workStatusTexts || []
+      wsLine = texts[idx] && texts[idx].length ? texts[idx][Math.floor(Math.random() * texts[idx].length)] : ""
+    }
 
+    // 气泡：agent · 项目 / 步骤总结（开启且已有）或档位文案 / 工具 · 命令摘要（workStatusDetail 开启时）
+    var showDetail = service.config.workStatusDetail === true
+    var summaryOn = (service.config.stepSummary || {}).enabled === true
+    var project = WS.projectName(ws.cwd)
+    var lines = [(ws.agent === "codex" ? "Codex" : "Claude") + (project ? " · " + project : "")]
+    var main = summaryOn && ws.summary && !terminal ? ws.summary : wsLine
+    if (!showDetail && ws.state === "waiting" && ws.tool) main += "（" + ws.tool + "）"
+    if (main) lines.push(main)
+    if (showDetail && ws.tool && !terminal) lines.push(WS.formatDetail(ws.tool, ws.detail, ws.cwd))
+    wsBubble = lines.length > 1 ? { text: lines.join("\n"), meme: "" } : null
+    if (!changed) return
+
+    if (terminal) wsBubbleTimer.restart()
+    else wsBubbleTimer.stop()
     var pool = (anims.events || {}).workStatus || []
     var slot = pool[idx]
     if (slot === undefined || dragging) return
     stopMove()
     var multi = Array.isArray(slot) && slot.length > 1
-    play(Shared.pickSlot(slot, anim), WS.isTerminal(ws.state) || multi)
+    play(Shared.pickSlot(slot, anim), terminal || multi)
   }
 
   // 窗口刚创建时宽高还是 0，按 0 算角落会落到屏幕外：等拿到真实尺寸再摆放

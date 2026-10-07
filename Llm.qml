@@ -11,6 +11,8 @@ Scope {
   property string stateDir: ""
   readonly property bool busy: proc.running
   property string lastUserText: ""
+  // 调用方自定义标记（步骤总结用它记住是哪个会话）
+  property string tag: ""
 
   property string petId: ""
   property string kind: ""
@@ -20,12 +22,14 @@ Scope {
   // failed = true 时 text 是给用户看的失败原因
   signal finished(string petId, string kind, string text, string meme, bool failed)
 
-  function run(provider, model, systemPrompt, prompt, petId, kind, meme) {
+  // cheap = 自动任务：Codex 额外压低推理强度
+  function run(provider, model, systemPrompt, prompt, petId, kind, meme, cheap) {
     if (proc.running) return false
     var cmd
     if (provider === "codex") {
       cmd = ["codex", "exec", "--skip-git-repo-check", "--ephemeral", "-s", "read-only", "--color", "never"]
       if (model) cmd.push("-m", model)
+      if (cheap) cmd.push("-c", "model_reasoning_effort=\"low\"")
       cmd.push(systemPrompt + "\n\n" + prompt)
     } else {
       // prompt 紧跟 -p：--tools 是变长参数，放在它后面会被当成工具名吃掉

@@ -31,6 +31,13 @@ event=$(jq -c --arg agent "$agent" --argjson focused "$focused" '{
   tool: (.tool_name // ""),
   notificationType: (.notification_type // ""),
   message: ((.message // .error // "") | tostring | .[0:200]),
+  # 工具参数摘要：命令 / 文件路径 / 搜索词等，取第一行前 120 字
+  detail: ((.tool_input // {})
+    | if type == "object" then (.command // .cmd // .file_path // .path // .pattern // .url // .query // .description // "") else . end
+    | if type == "array" then map(tostring) | join(" ") else tostring end
+    | (split("\n")[0] // "") | .[0:120]),
+  # 用户这一轮的请求（步骤总结用），只在 UserPromptSubmit 时带，截前 300 字
+  prompt: (if .hook_event_name == "UserPromptSubmit" then ((.prompt // "") | tostring | .[0:300]) else "" end),
   focused: $focused
 }' <<<"$payload" 2>/dev/null) || exit 0
 

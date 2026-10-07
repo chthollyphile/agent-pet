@@ -297,6 +297,16 @@
     "codexModel": ""
   },
   "whisperAuto": false,
+  "workStatusDetail": false,
+  "stepSummary": {
+    "enabled": false,
+    "intervalSec": 60
+  },
+  "autoModel": {
+    "provider": "claude",
+    "claudeModel": "haiku",
+    "codexModel": "gpt-5.6-luna"
+  },
   "agents": {
     "claude": true,
     "codex": true

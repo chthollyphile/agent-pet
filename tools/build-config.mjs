@@ -19,6 +19,13 @@ Object.assign(cfg, {
   llm: { provider: 'claude', claudeModel: 'haiku', codexModel: '' },
   // 定时碎碎念：默认关闭。关闭时只有右键菜单 / IPC 显式触发才会调用 LLM
   whisperAuto: false,
+  // 工作状态气泡显示 hook 里的工具名和命令 / 文件摘要（不调用模型）
+  workStatusDetail: false,
+  // 步骤总结：用 autoModel 定期把用户请求 + 最近几步操作概括成一句话，显示在工作状态气泡里。
+  // 每次总结调用一次模型，默认关闭；intervalSec = 两次总结的最短间隔（≥ 20 秒）
+  stepSummary: { enabled: false, intervalSec: 60 },
+  // 自动任务（步骤总结、定时碎碎念）用的模型：默认用便宜的小模型，不跟随 CLI 自己的默认模型
+  autoModel: { provider: 'claude', claudeModel: 'haiku', codexModel: 'gpt-5.6-luna' },
   // 接收哪些 agent 的 hooks 事件
   agents: { claude: true, codex: true },
   // 用量动画读哪个 agent 的记录：auto = 最近发来事件的那个

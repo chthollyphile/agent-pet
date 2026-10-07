@@ -6,7 +6,7 @@
 - 工作状态联动：hooks 事件切换思考 / 工作 / 整理 / 等待 / 成功 / 出错 6 档动画和头顶气泡。
 - 等待提醒：需要确认、任务完成、出错时冒气泡；发事件的终端不在前台时再发系统通知。
 - 用量动画：读取 `omarchy.agents` 生成的用量记录，按最紧张窗口的百分比播放余额档位动画；气泡列出每个窗口的用量和重置倒计时（5 小时窗口精确到分钟，周额度精确到小时）。
-- 碎碎念 / 对话：调用 `claude -p` 或 `codex exec`。**默认只在右键菜单或 IPC 显式触发时调用**；定时碎碎念由 `whisperAuto` 开启，默认关闭。
+- 碎碎念 / 对话：调用 `claude -p` 或 `codex exec`。**默认只在右键菜单或 IPC 显式触发时调用**；定时碎碎念（`whisperAuto`）和步骤总结（`stepSummary`）都默认关闭，开启后用单独指定的便宜模型（`autoModel`）。
 
 ## 致谢
 
@@ -59,8 +59,11 @@ Codex 第一次遇到新 hook 可能要求审核，在 Codex 里按提示信任�
 
 | 字段 | 默认 | 说明 |
 |---|---|---|
-| `llm` | `{"provider":"claude","claudeModel":"haiku","codexModel":""}` | 碎碎念 / 对话用哪个 CLI 和模型 |
-| `whisperAuto` | `false` | 按 `eventsRefreshSec.whisper` 定时碎碎念；有会话在工作时跳过 |
+| `llm` | `{"provider":"claude","claudeModel":"haiku","codexModel":""}` | 手动触发的碎碎念 / 对话用哪个 CLI 和模型；`codexModel` 留空 = Codex 的默认模型 |
+| `whisperAuto` | `false` | 按 `eventsRefreshSec.whisper` 定时碎碎念（用 `autoModel`）；有会话在工作时跳过 |
+| `workStatusDetail` | `false` | 工作状态气泡显示 hook 里的工具名和命令 / 文件摘要，如 `Bash · npm test`；不调用模型 |
+| `stepSummary` | `{"enabled":false,"intervalSec":60}` | 步骤总结：用 `autoModel` 把用户请求和最近 8 步操作概括成一句话，显示在气泡里。新一轮第一步后约 8 秒先总结一次，之后最多每 `intervalSec` 秒一次，且只在有新步骤时调用 |
+| `autoModel` | `{"provider":"claude","claudeModel":"haiku","codexModel":"gpt-5.6-luna"}` | 自动任务（步骤总结、定时碎碎念）用的模型，默认是便宜的小模型，不跟随 CLI 的默认模型；Codex 另外以低推理强度运行 |
 | `agents` | `{"claude":true,"codex":true}` | 接收哪些 agent 的事件 |
 | `usage.agent` | `"auto"` | 用量动画读哪个 agent；auto = 最近发来事件的那个 |
 | `notify.onlyWhenUnfocused` | `true` | 只在发事件的终端不在前台时通知 |
