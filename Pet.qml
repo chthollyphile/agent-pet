@@ -641,10 +641,12 @@ Item {
 
     // 气泡：agent · 项目 / 步骤总结（开启且已有）或档位文案 / 工具 · 命令摘要（workStatusDetail 开启时）
     var showDetail = service.config.workStatusDetail === true
-    var summaryOn = (service.config.stepSummary || {}).enabled === true
+    var mode = service.summaryMode()
     var project = WS.projectName(ws.cwd)
     var lines = [(ws.agent === "codex" ? "Codex" : "Claude") + (project ? " · " + project : "")]
-    var main = summaryOn && ws.summary && !terminal ? ws.summary : wsLine
+    // model 模式的总结只描述进行中的步骤；transcript 模式结束时显示 agent 的最后一句回复
+    var showSummary = ws.summary && (mode === "transcript" || (mode === "model" && !terminal))
+    var main = showSummary ? ws.summary : wsLine
     if (!showDetail && ws.state === "waiting" && ws.tool) main += "（" + ws.tool + "）"
     if (main) lines.push(main)
     if (showDetail && ws.tool && !terminal) lines.push(WS.formatDetail(ws.tool, ws.detail, ws.cwd))

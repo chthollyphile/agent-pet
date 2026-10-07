@@ -299,7 +299,7 @@
   "whisperAuto": false,
   "workStatusDetail": false,
   "stepSummary": {
-    "enabled": false,
+    "mode": "off",
     "intervalSec": 60
   },
   "autoModel": {

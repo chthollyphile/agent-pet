@@ -119,9 +119,19 @@ Scope {
     var res = WS.applyEvent(wsStore, ev, Date.now())
     if (res.entered) notifyFor(res.entry)
     if (res.changed) refreshWorkStatus()
-    // 新一轮还没有总结时，第一步出现后稍等几秒先总结一次，不必等满 intervalSec
-    if (stepSummaryCfg.enabled === true && res.entry && res.entry.steps.length && !res.entry.summary && !summaryKick.running)
-      summaryKick.restart()
+    var mode = summaryMode()
+    if (mode === "model") {
+      // 新一轮还没有总结时，第一步出现后稍等几秒先总结一次，不必等满 intervalSec
+      if (res.entry && res.entry.steps.length && !res.entry.summary && !summaryKick.running) summaryKick.restart()
+    } else if (mode === "transcript" && res.entry) {
+      if (ev.event === "Stop" && ev.lastMessage) {
+        // Stop 自带最后一条回复，不用读文件
+        if (WS.setSummary(wsStore, res.entry.key, WS.formatNarration(ev.lastMessage))) refreshWorkStatus()
+      } else if (ev.event === "PreToolUse" || ev.event === "Stop") {
+        narrationKey = res.entry.key
+        narrationDelay.restart()
+      }
+    }
     return "ok"
   }
 
@@ -273,6 +283,51 @@ Scope {
 
   // ------------------------------------------------------------ 步骤总结（stepSummary.enabled，默认关）
   readonly property var stepSummaryCfg: config.stepSummary || ({})
+
+  // off / transcript（读会话记录里 agent 自己写的话）/ model（用 autoModel 总结）；旧写法 enabled: true 视为 model
+  function summaryMode() {
+    var c = stepSummaryCfg
+    if (c.mode === "off" || c.mode === "transcript" || c.mode === "model") return c.mode
+    return c.enabled === true ? "model" : "off"
+  }
+
+  // ---- transcript 模式：从会话记录末尾读本轮最新一段 assistant 文字
+  property string narrationKey: ""
+  property bool narrationPending: false
+
+  function readNarration() {
+    var entry = wsStore.sessions[narrationKey]
+    if (!entry || !entry.transcript) return
+    if (narrationProc.running) {
+      narrationPending = true
+      return
+    }
+    narrationProc.key = entry.key
+    narrationProc.command = [root.pluginDir + "/bin/agent-pet-last-message", entry.transcript, new Date(entry.turnAt - 2000).toISOString()]
+    narrationProc.running = true
+  }
+
+  // hook 有时比记录文件写入早一点：稍等再读
+  Timer {
+    id: narrationDelay
+    interval: 500
+    onTriggered: root.readNarration()
+  }
+
+  Process {
+    id: narrationProc
+    property string key: ""
+    stdout: StdioCollector { id: narrationOut }
+    onExited: function(exitCode) {
+      var text = WS.formatNarration(narrationOut.text)
+      // 没读到（记录还没写入 / 本轮还没说话）就保留上一段，不清空
+      if (exitCode === 0 && text && WS.setSummary(root.wsStore, narrationProc.key, text)) root.refreshWorkStatus()
+      if (root.narrationPending) {
+        root.narrationPending = false
+        root.readNarration()
+      }
+    }
+  }
   property var summarizedSeq: ({})
 
   function summarizeCurrentStep() {
@@ -299,7 +354,7 @@ Scope {
 
   Timer {
     interval: Math.max(20, Number(root.stepSummaryCfg.intervalSec) || 60) * 1000
-    running: root.ready && root.stepSummaryCfg.enabled === true
+    running: root.ready && root.summaryMode() === "model"
     repeat: true
     triggeredOnStart: true
     onTriggered: root.summarizeCurrentStep()
@@ -462,7 +517,7 @@ Scope {
         llmBusy: llm.busy,
         autoBusy: autoLlm.busy,
         autoModel: root.autoModelFor(),
-        stepSummary: root.stepSummaryCfg.enabled === true,
+        stepSummary: root.summaryMode(),
         whisperAuto: root.config.whisperAuto === true
       })
     }

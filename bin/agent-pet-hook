@@ -38,6 +38,9 @@ event=$(jq -c --arg agent "$agent" --argjson focused "$focused" '{
     | (split("\n")[0] // "") | .[0:120]),
   # 用户这一轮的请求（步骤总结用），只在 UserPromptSubmit 时带，截前 300 字
   prompt: (if .hook_event_name == "UserPromptSubmit" then ((.prompt // "") | tostring | .[0:300]) else "" end),
+  # 会话记录路径（stepSummary.mode = transcript 时宠物自己去读）和 Stop 时的最后一条回复
+  transcript: (.transcript_path // ""),
+  lastMessage: ((.last_assistant_message // "") | tostring | .[0:2000]),
   focused: $focused
 }' <<<"$payload" 2>/dev/null) || exit 0
 
