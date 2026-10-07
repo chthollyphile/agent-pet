@@ -12,7 +12,7 @@ The character, animations, and core pet behavior are ported from [dsh-pet](https
 
 - **Pet behavior**: idling, random actions, turning, walking, click reactions, and physics-based dragging and throwing.
 - **Work status**: receives events through Claude Code / Codex hooks and switches between six states (thinking, working, reviewing results, waiting, success, error). The bubble can show the project name, the current tool and command, and either the agent's own step narration or a model-generated step summary.
-- **Attention alerts**: shows a bubble when approval is needed, when a task completes, or when it fails, and sends a desktop notification (agent name and status only) if the terminal that sent the event is not focused.
+- **Attention alerts**: shows a bubble when approval is needed, when a task completes, or when it fails, and sends a desktop notification (project name and message when `python-gobject` / `gi` is available; otherwise fixed agent-name and status text) if the terminal that sent the event is not focused.
 - **Usage**: plays an animation for the most constrained limit window and lists each window's usage and reset countdown. Uses Omarchy's `omarchy.agents` data on Omarchy and a built-in collector elsewhere.
 - **Murmurs and chat**: generated with `claude -p` or `codex exec`. By default the pet only calls a model when you explicitly ask it to.
 - **English and Chinese UI**: chosen automatically from the system locale, or set manually.
@@ -21,8 +21,9 @@ The character, animations, and core pet behavior are ported from [dsh-pet](https
 
 - [Quickshell](https://quickshell.org/) and a Wayland compositor with layer-shell support (Hyprland, Sway, niri, …; GNOME is not supported)
 - `qt6-imageformats` for WebP decoding in Qt (Arch: `sudo pacman -S qt6-imageformats`). Restart any running Quickshell instance after installing it.
-- `jq`, `notify-send`
+- `jq`, `socat`, `notify-send`
 - `python3` for usage collection outside Omarchy
+- Optional: `python-gobject` (PyGObject / `gi`) for D-Bus notifications with project names and messages; without it, notifications fall back to fixed text.
 - Claude Code and/or the Codex CLI for work-status integration
 
 ## Installation
@@ -69,8 +70,8 @@ Differences from plugin mode:
 
 - Menus and the chat box use the default theme in `Commons/`; as an Omarchy plugin they follow the Omarchy theme.
 - If Omarchy's `omarchy-agent-usage-update` is not available, usage is collected by `bin/agent-pet-usage` and stored in `~/.local/state/agent-pet/usage/`.
-- Hooks send events to the Omarchy plugin first and fall back to the standalone instance, so both modes share one hook configuration.
-- Do not run both modes at once, or two pets will appear.
+- Both modes share one hook configuration: hooks use `socat` to send events to `$XDG_RUNTIME_DIR/agent-pet/events.sock`, where the running pet receives them.
+- Do not run both modes at once: they share and would compete for the same event socket.
 
 ### Connect Claude Code and Codex
 
@@ -81,7 +82,7 @@ bin/agent-pet-install-hooks --uninstall   # removes them
 
 - Running the installer again does not create duplicate entries.
 - Codex may ask you to review new hooks the first time it sees them; trust them when prompted.
-- `bin/agent-pet-hook` writes nothing to standard output and returns immediately. Events are forwarded in the background in about 40 ms, so agents are not slowed down.
+- `bin/agent-pet-hook` writes nothing to standard output and returns immediately. Events are forwarded in the background through `socat` to the pet’s Unix socket without waiting for the pet to process them.
 
 ## Configuration
 
@@ -95,7 +96,7 @@ Each top-level field in your file **replaces** the default as a whole. For examp
 | `workStatusDetail` | `false` | Show the tool name and a command or file summary in the work-status bubble, e.g. `Bash · npm test`. No model call. |
 | `stepSummary` | `{"mode":"off","intervalSec":60}` | Step narration in the bubble. `off`: disabled. `transcript`: the agent's own latest message from the session transcript, with no model call; shows the final reply when the task ends. `model`: `autoModel` summarizes the request and the last 8 actions in one sentence, about 8 s after the first step of a turn, then at most every `intervalSec` seconds and only when there are new steps. |
 | `autoModel` | `{"provider":"claude","claudeModel":"haiku","codexModel":"gpt-5.6-luna"}` | Model for automated tasks (model step summaries, timed murmurs). Defaults to low-cost models instead of the CLI's default model; Codex runs with low reasoning effort. |
-| `llm` | `{"provider":"claude","claudeModel":"haiku","codexModel":""}` | CLI and model for murmurs and chat you trigger manually. An empty `codexModel` uses Codex's default model. |
+| `llm` | `{"provider":"claude","claudeModel":"haiku","codexModel":""}` | CLI and model for murmurs and chat you trigger manually. An empty `codexModel` uses Codex's built-in default model; the user's `config.toml` is not loaded. |
 | `whisperAuto` | `false` | Murmur on a timer every `eventsRefreshSec.whisper` seconds (uses `autoModel`). Skipped while an agent is working. |
 | `agents` | `{"claude":true,"codex":true}` | Which agents' events to accept. |
 | `usage` | `{"agent":"auto","source":"auto","refreshSec":900}` | `agent`: whose usage to show; `auto` is the agent that sent the latest event. `source`: `auto` uses Omarchy's data when available and the built-in collector otherwise; `omarchy` or `builtin` force one. `refreshSec`: records older than this are refreshed in the background. A manual check refreshes data older than 60 s first. |
@@ -168,11 +169,12 @@ omarchy-shell agent-pet reload
 ## Privacy and model usage
 
 - **Model calls** happen only for the context-menu **Murmur** and **Chat** actions, the `whisper` and `chat` IPC methods, and the opt-in `whisperAuto` and `stepSummary.mode = "model"` settings. The pet's own model calls never trigger hooks.
-- **Data forwarded by hooks** is limited to the event name, session ID, project path, tool name, the first line of the tool arguments (up to 120 characters), notification text (up to 200), the first 300 characters of the turn's prompt, the final reply when a turn ends (up to 2000), and the transcript path. It never leaves your machine.
+- **Data forwarded by hooks** is limited to the event name, session ID, project path, tool name, the first line of the tool arguments (up to 120 characters), notification text (up to 200), the first 300 characters of the turn's prompt, the final reply when a turn ends (up to 2000), and the transcript path. Hook transport stays on your machine; model step summaries send some of this content to a model provider (see below).
 - **Session transcripts** are read only when `stepSummary.mode = "transcript"`, and only the last 400 KB each time.
-- **Process arguments carry no private content**, because other local users can read every process's command line. Hook events are passed through a private file in `$XDG_RUNTIME_DIR/agent-pet/` (directory mode 700, deleted right after the pet reads it), prompts and chat history reach `claude` / `codex` on standard input with the system prompt in a private file, and desktop notifications contain only the agent name and status. Text you pass yourself to `omarchy-shell agent-pet say` or `chat` is part of that command's line.
+- **Model step summaries**: enabling `stepSummary.mode = "model"` sends the request excerpt (up to 300 characters) and summaries of the last 8 actions to the provider configured in `autoModel`. This may be a different provider from the one used by the current Claude Code / Codex session.
+- **Process arguments carry no private content**, because other local users can read process command lines. Hook events travel through a pipe and `$XDG_RUNTIME_DIR/agent-pet/events.sock` (parent directory mode 700); `socat` arguments contain only the socket path. Prompts and chat history reach `claude` / `codex` on standard input, with the system prompt in a private file. Notification project names and messages reach `bin/agent-pet-notify` on standard input and are sent over D-Bus; without `gi`, `notify-send` receives only fixed text. Text you pass yourself to `omarchy-shell agent-pet say` or `chat` is part of that command’s line.
 - **`~/.local/state/agent-pet/`** (chat history, prompt files) is kept at mode 700.
-- **Network access** is used only outside Omarchy, to query Claude / Codex rate limits. Limit queries only read usage and do not consume any quota.
+- **Network access**: the built-in usage collector queries Claude / Codex rate limits; on Omarchy, the pet reuses its collector’s data by default. Limit queries only read usage and do not consume quota. Enabling or manually triggering model features makes the relevant CLI contact its model provider.
 
 ## Known limitations
 
@@ -202,6 +204,8 @@ Notes:
 
 The built assets under `assets/` are committed. Every committed version stays in the history that each install clones, so commit asset changes only when they are final.
 
+Run `python3 tools/test-runtime.py` on a Wayland desktop to check QML loading, hook delivery and socket recycling, parent-process parsing, D-Bus notifications, and private content staying out of process arguments. It also needs `bwrap`, `dbus-run-session`, and `python-gobject`. The test temporarily shows a second pet, isolates configuration and notifications, disables network access, and keeps logs under `/tmp/agent-pet-runtime-*`.
+
 ### Publishing the Omarchy plugin
 
 The Omarchy marketplace lists [omarchy-agent-pet](https://github.com/chthollyphile/omarchy-agent-pet), not this repository. Export the committed `HEAD` into a checkout of it, which also runs `omarchy plugin validate`:
@@ -213,10 +217,13 @@ git -C ../omarchy-agent-pet push
 
 The export contains the plugin QML files, `lib/`, `bin/`, `assets/`, and `LICENSE`, plus the release repository's own README and preview image from `packaging/omarchy/` and `docs/`. Standalone mode, the installer, and build tools stay here. After pushing, request verification of the new commit through the marketplace's plugin verification form.
 
+To deploy locally, run `omarchy plugin update chthollyphile.agent-pet`, then `omarchy restart shell` to load the new QML components. The hook and pet share the plugin directory and update together.
+
 ### Project layout
 
 | Path | Description |
 |---|---|
+| `EventServer.qml` | Unix socket server for hook events |
 | `Service.qml` | Central state: configuration, session aggregation, usage, model calls, notifications, IPC |
 | `PetOverlay.qml` | One full-screen transparent layer-shell window per screen; input is limited to the pet |
 | `Pet.qml` | Animation playback and transitions, movement, dragging and throwing, bubbles |
@@ -225,6 +232,7 @@ The export contains the plugin QML files, `lib/`, `bin/`, `assets/`, and `LICENS
 | `lib/work-status.mjs`, `lib/usage.mjs`, `lib/i18n.mjs`, `lib/jsonc.mjs` | Event aggregation, usage parsing, UI strings, JSONC parsing |
 | `shell.qml`, `Commons/` | Standalone entry point and default theme |
 | `install.sh` | Installer |
+| `bin/agent-pet-notify` | Reads notifications from stdin, sends them over D-Bus, and escapes body markup |
 | `bin/` | Hook bridge and installer, transcript reader, built-in usage collector |
 | `assets/` | Default configuration, animations (`webp/`), stickers (`memes/`), and notification icons (`pic/`) |
 | `tools/` | Build scripts for assets, shared logic, and default configuration; Omarchy plugin export |

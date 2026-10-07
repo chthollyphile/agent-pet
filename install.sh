@@ -31,7 +31,7 @@ ask() {
 # ---------------------------------------------------------------- 依赖
 step "检查依赖" "Checking dependencies"
 missing=()
-for cmd in git jq notify-send; do
+for cmd in git jq socat notify-send; do
   command -v "$cmd" >/dev/null || missing+=("$cmd")
 done
 command -v qs >/dev/null || command -v quickshell >/dev/null || missing+=("quickshell")
@@ -41,6 +41,10 @@ if (( ${#missing[@]} )); then
 fi
 command -v python3 >/dev/null || say "提示：没有 python3，非 Omarchy 环境下无法采集用量" \
   "Note: python3 not found; usage limits can't be collected outside Omarchy"
+if ! python3 -c 'import gi; gi.require_version("Gio", "2.0"); from gi.repository import Gio, GLib' >/dev/null 2>&1; then
+  say "提示：未安装可选依赖 python-gobject（gi），系统通知只显示固定文字，不显示项目名和消息。" \
+    "Note: optional python-gobject (gi) is unavailable; notifications show fixed text only, without project names or messages."
+fi
 if ! find /usr/lib /usr/lib64 /usr/lib/qt6 -path '*qt6/plugins/imageformats/libqwebp.so' -print -quit 2>/dev/null | grep -q .; then
   say "缺少 Qt 的 WebP 支持：请安装 qt6-imageformats（Arch：sudo pacman -S qt6-imageformats），装完要重启 Quickshell。" \
     "Qt WebP support is missing: install qt6-imageformats (Arch: sudo pacman -S qt6-imageformats), then restart Quickshell."
@@ -77,6 +81,7 @@ else
     if [[ -d $dir/.git ]]; then
       say "已安装：$dir（更新请运行 git -C $dir pull）" "Already installed: $dir (update with git -C $dir pull)"
     else
+      ask "下载仓库到 $dir？" "Clone the repository into $dir?" || exit 0
       git clone "$REPO_URL" "$dir"
     fi
   fi

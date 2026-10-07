@@ -27,7 +27,7 @@ target=${target:-$ROOT/../omarchy-agent-pet}
 # 作为 Omarchy 插件运行时 qs.Commons 解析到 Omarchy 自己的 Commons。
 runtime=(
   manifest.json LICENSE assets
-  Service.qml Pet.qml PetOverlay.qml PetMenu.qml ChatInput.qml Bubble.qml Llm.qml
+  Service.qml EventServer.qml Pet.qml PetOverlay.qml PetMenu.qml ChatInput.qml Bubble.qml Llm.qml
   lib bin
 )
 # 发布仓库专用文件：源路径 → 目标路径

@@ -12,7 +12,7 @@ Agent Pet 是一只运行在 Quickshell 上的桌面宠物，会随 Claude Code 
 
 - **桌宠行为**：待机、随机动作、转向、行走、点击回应，以及带物理效果的拖拽与甩抛。
 - **工作状态联动**：通过 Claude Code / Codex 的 hooks 接收事件，在思考、工作、整理、等待、成功、出错 6 种状态之间切换动画。气泡可显示项目名、当前工具与命令摘要，以及 agent 自己写的步骤说明或模型生成的步骤总结。
-- **等待提醒**：需要确认、任务完成或出错时显示气泡；发出事件的终端不在前台时，同时发送系统通知（只含 agent 名称和状态）。
+- **等待提醒**：需要确认、任务完成或出错时显示气泡；发出事件的终端不在前台时，同时发送系统通知（有 `python-gobject` / `gi` 时显示项目名和消息；没有时只显示 agent 名称和状态等固定文字）。
 - **用量显示**：按最紧张的额度窗口播放对应档位的动画，气泡列出每个窗口的用量和重置倒计时。Omarchy 上直接使用 `omarchy.agents` 的数据，其他环境使用内置采集。
 - **碎碎念与对话**：通过 `claude -p` 或 `codex exec` 生成。默认只在用户显式触发时调用模型。
 - **双语界面**：根据系统语言自动选择中文或英文，也可以手动指定。
@@ -21,8 +21,9 @@ Agent Pet 是一只运行在 Quickshell 上的桌面宠物，会随 Claude Code 
 
 - [Quickshell](https://quickshell.org/)，以及支持 layer-shell 的 Wayland 混成器（Hyprland、Sway、niri 等；GNOME 不支持）
 - `qt6-imageformats`：Qt 的 WebP 解码插件（Arch：`sudo pacman -S qt6-imageformats`）。安装后需要重启正在运行的 Quickshell。
-- `jq`、`notify-send`
+- `jq`、`socat`、`notify-send`
 - 非 Omarchy 环境下采集用量需要 `python3`
+- 可选：`python-gobject`（PyGObject / `gi`），用于包含项目名和消息的 D-Bus 通知；缺少时退回固定文字通知。
 - 工作状态联动需要 Claude Code 和/或 Codex CLI
 
 ## 安装
@@ -69,8 +70,8 @@ qs ipc -p /path/to/agent-pet call agent-pet state
 
 - 菜单与对话框使用 `Commons/` 中的默认主题；作为 Omarchy 插件运行时跟随 Omarchy 主题。
 - 找不到 Omarchy 的 `omarchy-agent-usage-update` 时，自动使用内置采集 `bin/agent-pet-usage`，记录保存在 `~/.local/state/agent-pet/usage/`。
-- hook 优先将事件发送给 Omarchy 插件，失败时再发送给独立实例，两种模式共用同一套 hooks 配置。
-- 请勿同时运行两种模式，否则屏幕上会出现两只宠物。
+- 两种模式共用同一套 hooks 配置；hook 经 `socat` 将事件写入 `$XDG_RUNTIME_DIR/agent-pet/events.sock`，由当前运行的宠物接收。
+- 请勿同时运行两种模式：它们共用同一个事件 socket，会争用事件入口。
 
 ### 接入 Claude Code 与 Codex
 
@@ -81,7 +82,7 @@ bin/agent-pet-install-hooks --uninstall   # 移除
 
 - 重复运行不会产生重复条目。
 - Codex 首次遇到新的 hook 时可能要求审核，按提示信任即可。
-- `bin/agent-pet-hook` 不向标准输出写入任何内容，并立即返回；事件在后台转发，约 40 ms，不会拖慢 agent。
+- `bin/agent-pet-hook` 不向标准输出写入任何内容，并立即返回；事件在后台经 `socat` 转发到宠物的 Unix socket，不等待宠物处理。
 
 ## 配置
 
@@ -95,7 +96,7 @@ bin/agent-pet-install-hooks --uninstall   # 移除
 | `workStatusDetail` | `false` | 在工作状态气泡中显示工具名与命令或文件摘要，例如 `Bash · npm test`。不调用模型。 |
 | `stepSummary` | `{"mode":"off","intervalSec":60}` | 气泡中的步骤说明。`off`：关闭。`transcript`：读取会话记录中 agent 自己写的最新一段话，不调用模型，任务结束时显示最后一条回复。`model`：使用 `autoModel` 将用户请求与最近 8 步操作概括成一句话，每一轮第一步后约 8 秒先总结一次，之后最多每 `intervalSec` 秒一次，且只在有新步骤时调用。 |
 | `autoModel` | `{"provider":"claude","claudeModel":"haiku","codexModel":"gpt-5.6-luna"}` | 自动任务（模型版步骤总结、定时碎碎念）使用的模型。默认为低成本模型，不跟随 CLI 的默认模型；Codex 以低推理强度运行。 |
-| `llm` | `{"provider":"claude","claudeModel":"haiku","codexModel":""}` | 手动触发的碎碎念与对话使用的 CLI 和模型。`codexModel` 留空时使用 Codex 的默认模型。 |
+| `llm` | `{"provider":"claude","claudeModel":"haiku","codexModel":""}` | 手动触发的碎碎念与对话使用的 CLI 和模型。`codexModel` 留空时使用 Codex 内置默认模型，不读取用户的 `config.toml`。 |
 | `whisperAuto` | `false` | 按 `eventsRefreshSec.whisper` 的间隔定时碎碎念（使用 `autoModel`）。有 agent 正在工作时跳过。 |
 | `agents` | `{"claude":true,"codex":true}` | 接收哪些 agent 的事件。 |
 | `usage` | `{"agent":"auto","source":"auto","refreshSec":900}` | `agent`：显示哪个 agent 的用量，`auto` 为最近发来事件的 agent。`source`：`auto` 在可用时使用 Omarchy 的数据，否则使用内置采集，也可指定 `omarchy` 或 `builtin`。`refreshSec`：记录超过该秒数后在后台重新采集。手动查看时，超过 60 秒的数据会先刷新。 |
@@ -168,11 +169,12 @@ omarchy-shell agent-pet reload
 ## 隐私与模型调用
 
 - **模型调用**：只有以下情况会调用模型：右键菜单中的“碎碎念”和“对话”、IPC 的 `whisper` 和 `chat`，以及用户主动开启的 `whisperAuto` 与 `stepSummary.mode = "model"`。宠物自身的模型调用不会触发 hooks。
-- **hooks 转发的数据**：只有事件名、会话 ID、项目路径、工具名、工具参数第一行（最多 120 字）、通知文本（最多 200 字）、本轮请求的前 300 字、结束时的最后一条回复（最多 2000 字），以及会话记录路径。数据不会离开本机。
+- **hooks 转发的数据**：只有事件名、会话 ID、项目路径、工具名、工具参数第一行（最多 120 字）、通知文本（最多 200 字）、本轮请求的前 300 字、结束时的最后一条回复（最多 2000 字），以及会话记录路径。hook 传输本身仅限本机；启用模型步骤总结后，部分内容会发给模型提供方（见下文）。
 - **会话记录**：仅在 `stepSummary.mode = "transcript"` 时读取，每次只读取文件末尾 400 KB。
-- **进程参数里不放私密内容**：本机其他用户能看到所有进程的命令行。hook 事件经 `$XDG_RUNTIME_DIR/agent-pet/` 下的私有文件传递（目录权限 700，宠物读完立即删除）；提示词和对话历史通过标准输入交给 `claude` / `codex`，系统提示词写在私有文件里；系统通知只包含 agent 名称和状态。你自己通过 `omarchy-shell agent-pet say` 或 `chat` 传入的文字会出现在该命令的命令行里。
+- **模型步骤总结**：启用 `stepSummary.mode = "model"` 后，本轮请求摘录（最多 300 字符）和最近 8 步操作摘要会发送给 `autoModel` 配置的提供方。该提供方可能不是当前 Claude Code / Codex 会话使用的那家。
+- **进程参数里不放私密内容**：本机其他用户能看到进程的命令行。hook 事件经管道和 `$XDG_RUNTIME_DIR/agent-pet/events.sock` 传递（父目录权限 700），`socat` 参数只含 socket 路径；提示词和对话历史通过标准输入交给 `claude` / `codex`，系统提示词写在私有文件里。通知的项目名和消息通过标准输入交给 `bin/agent-pet-notify`，再经 D-Bus 发送；没有 `gi` 时退回 `notify-send`，只传固定文字。你自己通过 `omarchy-shell agent-pet say` 或 `chat` 传入的文字会出现在该命令的命令行里。
 - **`~/.local/state/agent-pet/`**（对话记录、提示词文件）权限保持为 700。
-- **网络访问**：仅在非 Omarchy 环境下查询 Claude / Codex 的额度。额度查询只读取用量，不消耗额度。
+- **网络访问**：内置用量采集会查询 Claude / Codex 的额度；Omarchy 上默认复用其采集结果。额度查询只读取用量，不消耗额度。启用或手动触发模型功能时，相应 CLI 会联系模型提供方。
 
 ## 已知限制
 
@@ -202,6 +204,8 @@ omarchy plugin enable chthollyphile.agent-pet
 
 构建出的 `assets/` 纳入 git。每次提交的素材都会永久留在历史里，每次安装都要 clone 下来，因此只在素材定稿后提交。
 
+在 Wayland 桌面运行 `python3 tools/test-runtime.py`，可验证 QML 加载、hook 传输与 socket 重建、父进程链解析、D-Bus 通知，以及私密内容不进入进程参数。还需安装 `bwrap`、`dbus-run-session` 和 `python-gobject`。测试会临时显示第二只宠物，隔离配置和通知、禁用网络，并将日志保存在 `/tmp/agent-pet-runtime-*`。
+
 ### 发布 Omarchy 插件
 
 Omarchy 插件市场收录的是 [omarchy-agent-pet](https://github.com/chthollyphile/omarchy-agent-pet)，不是本仓库。把已提交的 `HEAD` 导出到它的本地 checkout，脚本同时会运行 `omarchy plugin validate`：
@@ -213,10 +217,13 @@ git -C ../omarchy-agent-pet push
 
 导出内容为插件的 QML 文件、`lib/`、`bin/`、`assets/` 和 `LICENSE`，加上 `packaging/omarchy/` 与 `docs/` 中发布仓库专用的 README 和预览图。独立模式、安装脚本和构建工具只留在本仓库。推送后，通过插件市场的 plugin verification 表单申请验证新的 commit。
 
+本机部署时运行 `omarchy plugin update chthollyphile.agent-pet`，再运行 `omarchy restart shell` 加载新的 QML 组件。hook 和宠物在同一个插件目录里，会一起更新。
+
 ### 目录结构
 
 | 路径 | 说明 |
 |---|---|
+| `EventServer.qml` | 接收 hook 事件的 Unix socket 服务 |
 | `Service.qml` | 状态中枢：配置、会话聚合、用量、模型调用、通知、IPC |
 | `PetOverlay.qml` | 每块屏幕一个全屏透明的 layer-shell 窗口，输入区域只覆盖宠物 |
 | `Pet.qml` | 动画播放与切换、移动、拖拽与甩抛、气泡 |
@@ -225,6 +232,7 @@ git -C ../omarchy-agent-pet push
 | `lib/work-status.mjs`、`lib/usage.mjs`、`lib/i18n.mjs`、`lib/jsonc.mjs` | 事件聚合、用量解析、界面文本、JSONC 解析 |
 | `shell.qml`、`Commons/` | 独立模式的入口与默认主题 |
 | `install.sh` | 安装脚本 |
+| `bin/agent-pet-notify` | 从标准输入读取通知，经 D-Bus 发送并转义正文 markup |
 | `bin/` | hook 转发与安装、会话记录读取、内置用量采集 |
 | `assets/` | 默认配置、动画（`webp/`）、表情包（`memes/`）与通知图标（`pic/`） |
 | `tools/` | 素材、共享逻辑、默认配置的构建脚本，以及 Omarchy 插件导出 |
