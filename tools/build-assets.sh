@@ -13,7 +13,7 @@ QUALITY=${QUALITY:-70}
 OUT=$ROOT/assets/webp
 
 mkdir -p "$OUT"
-for dir in memes pic fonts; do
+for dir in memes pic; do
   rm -rf "${ROOT:?}/assets/$dir"
   cp -r "$SRC/assets/$dir" "$ROOT/assets/$dir"
 done

@@ -567,8 +567,8 @@ Item {
     content: pet.bubbleContent
     memeDir: Qt.resolvedUrl("assets/memes/")
     readonly property var fontCfg: pet.service.config.bubbleFont || ({})
-    // 没指定字体时：中文用内置上首软糖体；英文用 Noto Sans（软糖体的拉丁字母间距不理想），没装则由 fontconfig 回退
-    fontFamily: fontCfg.family || (pet.service.lang === "en" && !fontCfg.file ? "Noto Sans" : "")
+    // 没指定字体时：中文用 Noto Sans CJK SC，英文用 Noto Sans；没装则由 fontconfig 回退到其他字体
+    fontFamily: fontCfg.family || (fontCfg.file ? "" : pet.service.lang === "en" ? "Noto Sans" : "Noto Sans CJK SC")
     fontFile: fontCfg.file ? String(fontCfg.file).replace(/^~(?=\/)/, pet.service.home) : ""
     fontSize: Number(fontCfg.size) > 0 ? Number(fontCfg.size) : 14
     // 头顶居中，夹在屏幕内

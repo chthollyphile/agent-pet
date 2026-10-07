@@ -1,13 +1,13 @@
 import QtQuick
 
 // 头顶气泡：白底圆角 + 小尾巴，可带一张表情包。不接收输入（不在 overlay 的 mask 里）。
-// 样式取自 dsh-pet 的 bubble.ts（白 92%、#2b2b2b、上首软糖体）。
+// 样式取自 dsh-pet 的 bubble.ts（白 92%、#2b2b2b）。
 Item {
   id: bubble
 
   property var content: null // { text, meme }
   property url memeDir
-  // 字体：fontFile（字体文件路径）> fontFamily（已安装字体名）> 内置上首软糖体
+  // 字体：fontFile（字体文件路径）> fontFamily（已安装字体名）> sans-serif
   property string fontFamily: ""
   property string fontFile: ""
   property int fontSize: 14
@@ -33,8 +33,7 @@ Item {
 
   FontLoader {
     id: loader
-    source: bubble.fontFile ? "file://" + bubble.fontFile
-      : bubble.fontFamily ? "" : Qt.resolvedUrl("assets/fonts/上首软糖体.ttf")
+    source: bubble.fontFile ? "file://" + bubble.fontFile : ""
   }
 
   readonly property string resolvedFamily: loader.status === FontLoader.Ready ? loader.name

@@ -15,7 +15,7 @@
 
 来自 dsh-pet 的部分：
 
-- **动画与静态素材**：106 段透明动画、表情包、通知图标、字体（上首软糖体）。本仓库不包含这些文件，构建时从本地的 dsh-pet 克隆转码 / 复制生成。
+- **动画与静态素材**：106 段透明动画、表情包、通知图标。本仓库不包含这些文件，构建时从本地的 dsh-pet 克隆转码 / 复制生成。dsh-pet 附带的第三方字体（上首软糖体）不使用，气泡用系统字体。
 - **默认配置**：动画池、权重、物理参数、工作状态文案、人设提示词，由 `tools/build-config.mjs` 从 dsh-pet 的 `assets/config.jsonc` 生成。
 - **纯逻辑代码**：`src/shared` 中的物理（拖拽 / 甩抛 / Q 弹）、动画抽选、移动规划、菜单树，由 `tools/build-shared.mjs` 原样打包进 `lib/shared.mjs`。
 - 工作状态 6 档的设计与档位顺序。
@@ -26,21 +26,44 @@ agent-pet 新写的部分：Quickshell / Omarchy 插件外壳（QML）、Claude 
 
 ## 安装
 
-依赖：Quickshell、`qt6-imageformats`（WebP 解码）、`ffmpeg`（带 libvpx / libwebp）、`jq`、node、python3（独立模式的用量采集）。
+依赖：Quickshell、`qt6-imageformats`（WebP 解码，Arch：`sudo pacman -S qt6-imageformats`，装完要重启已在运行的 Quickshell）、`jq`、`curl`、`notify-send`；非 Omarchy 环境采集用量还需要 python3。
 
-构建需要 dsh-pet 的源码和素材，默认放在本仓库旁边（`../dsh-pet`）。也可以把路径作为参数传给 `tools/build-*.{sh,mjs}`。
+### 一行命令安装（推荐）
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/chthollyphile/agent-pet/main/install.sh)
+```
+
+脚本每一步都先询问：
+
+1. 检查依赖。
+2. 安装插件：有 Omarchy 时用 `omarchy plugin add`（会显示 Omarchy 自己的安全提示），否则 clone 到 `~/.local/share/agent-pet` 作为独立 Quickshell 实例运行。`AGENT_PET_MODE=standalone` 可在 Omarchy 上也装成独立模式。
+3. 下载动画素材（约 177 MB，来自本仓库的 GitHub Release，校验 sha256）。
+4. 接入 Claude Code / Codex hooks（修改前自动备份配置）。
+5. 启用插件，或启动独立实例并给出开机启动的写法。
+
+### 用 `omarchy plugin add` 安装
+
+```bash
+omarchy plugin add https://github.com/chthollyphile/agent-pet.git --enable
+```
+
+Omarchy 只会 clone 仓库，不会运行任何安装步骤，所以这时还没有动画素材。插件启动后发现缺素材，会弹出一条通知，点“下载”才开始下载，完成后宠物自动出现。也可以手动运行：
+
+```bash
+~/.config/omarchy/plugins/lia.pet/bin/agent-pet-fetch-assets
+~/.config/omarchy/plugins/lia.pet/bin/agent-pet-install-hooks   # 可选：接入 Claude Code / Codex
+```
+
+### 从源码构建（开发）
+
+素材由 dsh-pet 的原始视频转码生成，需要 dsh-pet 的源码（默认放在本仓库旁边 `../dsh-pet`，也可以把路径作为参数传给 `tools/build-*.{sh,mjs}`）、`ffmpeg`（带 libvpx / libwebp）和 node：
 
 ```bash
 git clone https://github.com/PC2005-cloud/dsh-pet.git ../dsh-pet
-sudo pacman -S qt6-imageformats   # 装完要重启已在运行的 Quickshell
 npm install
 npm run build                     # lib/shared.mjs + assets/config.json + assets/webp（约 170 MB）
-```
-
-### Omarchy 插件模式
-
-```bash
-ln -s "$PWD" ~/.config/omarchy/plugins/lia.pet
+ln -s "$PWD" ~/.config/omarchy/plugins/lia.pet   # Omarchy 插件模式
 omarchy-shell shell rescanPlugins
 omarchy plugin enable lia.pet
 ```
@@ -49,6 +72,18 @@ omarchy plugin enable lia.pet
 
 - 插件目录是符号链接，omarchy 的 inotify 监视不会跟进改动。
 - `omarchy-shell shell rescanPlugins` 只会刷新 `Service.qml`。`Pet.qml`、`PetOverlay.qml` 等子组件仍沿用旧的已编译类型（宿主 `destroy()` 延迟执行，清缓存时旧类型还被引用）。改了子组件要执行 `omarchy-restart-shell`。
+
+### 发布素材（维护者）
+
+素材不进 git，作为 GitHub Release 附件发布，`assets.json` 记录下载地址、sha256 和大小：
+
+```bash
+tools/pack-assets.sh              # 打包 dist/agent-pet-assets-v1.tar，更新 assets.json（tar 可复现，同样素材 sha256 不变）
+gh release create assets-v1 dist/agent-pet-assets-v1.tar --title "Assets v1"
+git add assets.json && git commit -m "chore: update asset release metadata"
+```
+
+素材有变化时用 `tools/pack-assets.sh --version 2` 发新版本。
 
 ### 独立模式（只依赖 Quickshell）
 
@@ -95,7 +130,7 @@ Codex 第一次遇到新 hook 可能要求审核，在 Codex 里按提示信任�
 | `notify.onlyWhenUnfocused` | `true` | 只在发事件的终端不在前台时通知 |
 | `language` | `"auto"` | 界面语言：`auto` 按系统 locale（`LANGUAGE` → `LC_ALL` → `LC_MESSAGES` → `LANG`）判断，以 `zh` 开头用中文，否则英文；也可写 `zh` / `en`。英文时，没自定义的 `workStatusTexts`、`whisperPrompt` 换成英文版，菜单里的动画显示英文名；动画和表情包图片本身不变 |
 | `clickAction` | `"react"` | 左键点击宠物：`react` 播点击回应动画；`usage` 查看用量 |
-| `bubbleFont` | `{"family":"","file":"","size":14}` | 气泡字体。`file`（字体文件路径，支持 `~/`）优先于 `family`（已安装字体名，见 `fc-list : family`）；都留空 = 中文界面用内置上首软糖体，英文界面用 Noto Sans（没装时由 fontconfig 回退到其他无衬线字体）。菜单和对话框跟随 Omarchy 主题字体 |
+| `bubbleFont` | `{"family":"","file":"","size":14}` | 气泡字体。`file`（字体文件路径，支持 `~/`）优先于 `family`（已安装字体名，见 `fc-list : family`）；都留空 = 中文界面用 Noto Sans CJK SC，英文界面用 Noto Sans（没装时由 fontconfig 回退到其他字体）。菜单和对话框跟随 Omarchy 主题字体 |
 | `layer` | `"top"` | `overlay` = 全屏应用之上也显示 |
 | `pets[].screen` | 第一块屏 | 宠物所在显示器名（`hyprctl monitors`） |
 
@@ -186,5 +221,7 @@ omarchy-shell lia.pet event '{"agent":"claude","event":"Stop","session":"x","cwd
 | `lib/shared.mjs` | dsh-pet `src/shared` 打包产物，勿手改 |
 | `lib/work-status.mjs` / `lib/usage.mjs` / `lib/jsonc.mjs` | hooks 事件聚合 / 用量解析 / JSONC |
 | `shell.qml` / `Commons/` | 独立模式入口与默认主题 |
-| `bin/` | hook 桥接与安装脚本、会话记录读取（`agent-pet-last-message`）、内置用量采集（`agent-pet-usage`，移植自 Omarchy） |
-| `tools/` | 素材、共享逻辑、配置的构建脚本 |
+| `install.sh` | 一行命令安装脚本 |
+| `bin/` | hook 桥接与安装脚本、素材下载（`agent-pet-fetch-assets`）、会话记录读取（`agent-pet-last-message`）、内置用量采集（`agent-pet-usage`，移植自 Omarchy） |
+| `assets.json` | 素材 Release 的下载地址、sha256、大小（由 `tools/pack-assets.sh` 生成） |
+| `tools/` | 素材、共享逻辑、配置的构建脚本，素材打包（`pack-assets.sh`） |
