@@ -5,11 +5,14 @@
 #       或在 clone 下来的仓库里运行 ./install.sh
 #       AGENT_PET_MODE=standalone ./install.sh   在 Omarchy 上也装成独立模式
 #
-# 步骤：检查依赖 → 安装插件（Omarchy 用 `omarchy plugin add`，否则 clone 到 ~/.local/share/agent-pet，
+# 步骤：检查依赖 → 安装插件（Omarchy 用 `omarchy plugin add` 安装发布仓库 omarchy-agent-pet，
+#      否则 clone 到 ~/.local/share/agent-pet，
 #      作为独立 Quickshell 实例运行）→ 下载动画素材 → 接入 Claude Code / Codex hooks → 启用 / 启动
 set -euo pipefail
 
 REPO_URL=${AGENT_PET_REPO:-https://github.com/chthollyphile/agent-pet.git}
+# Omarchy 插件从发布仓库安装（由 tools/export-omarchy.sh 生成，只含运行文件）
+PLUGIN_REPO_URL=${AGENT_PET_PLUGIN_REPO:-https://github.com/chthollyphile/omarchy-agent-pet.git}
 PLUGIN_ID=chthollyphile.agent-pet
 
 zh() { [[ ${LANGUAGE:-${LC_ALL:-${LC_MESSAGES:-${LANG:-}}}} == zh* ]]; }
@@ -48,7 +51,6 @@ fi
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P || true)
 local_repo=""
 [[ -n $script_dir && -f $script_dir/manifest.json && -d $script_dir/.git ]] && local_repo=$script_dir
-source=${local_repo:-$REPO_URL}
 
 # AGENT_PET_MODE=omarchy|standalone 可强制指定；默认有 omarchy-plugin-add 就装成 Omarchy 插件
 mode=${AGENT_PET_MODE:-}
@@ -63,7 +65,7 @@ if [[ $mode == omarchy ]]; then
     say "已安装：$dir" "Already installed: $dir"
   else
     # omarchy plugin add 会自己显示安全提示并询问；这里不加 --yes
-    omarchy-plugin-add "$source"
+    omarchy-plugin-add "$PLUGIN_REPO_URL"
   fi
 else
   step "安装独立模式（只依赖 Quickshell）" "Installing standalone mode (Quickshell only)"

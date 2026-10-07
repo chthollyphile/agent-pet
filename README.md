@@ -36,7 +36,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/chthollyphile/agent-pet/main
 The installer asks before each step:
 
 1. Check dependencies.
-2. Install the plugin: with `omarchy plugin add` when Omarchy is present (Omarchy shows its own security prompt), otherwise as a standalone instance cloned to `~/.local/share/agent-pet`. Set `AGENT_PET_MODE=standalone` to use standalone mode on Omarchy as well.
+2. Install the plugin: with `omarchy plugin add` from the plugin release repository when Omarchy is present (Omarchy shows its own security prompt), otherwise as a standalone instance cloned to `~/.local/share/agent-pet`. Set `AGENT_PET_MODE=standalone` to use standalone mode on Omarchy as well.
 3. Download the animation assets (about 177 MB from this repository's GitHub Releases, verified with sha256).
 4. Install the Claude Code / Codex hooks (configuration files are backed up first).
 5. Enable the plugin, or start the standalone instance and show how to launch it at login.
@@ -44,8 +44,10 @@ The installer asks before each step:
 ### Install with `omarchy plugin add`
 
 ```bash
-omarchy plugin add https://github.com/chthollyphile/agent-pet.git --enable
+omarchy plugin add https://github.com/chthollyphile/omarchy-agent-pet --enable
 ```
+
+[omarchy-agent-pet](https://github.com/chthollyphile/omarchy-agent-pet) is the plugin release repository: it is generated from this repository by `tools/export-omarchy.sh` and contains only the files the plugin needs at runtime.
 
 `omarchy plugin add` only clones the repository and runs no install steps, so the animation assets are not present yet. When the plugin detects this, it sends a notification; the download starts only after you click **Download**, and the pet appears when it finishes. You can also run the steps manually:
 
@@ -211,6 +213,17 @@ git add assets.json && git commit -m "chore: update asset release metadata"
 
 Packing is reproducible: the same assets always produce the same sha256. When the assets change, publish a new version with `tools/pack-assets.sh --version 2`.
 
+### Publishing the Omarchy plugin
+
+The Omarchy marketplace lists [omarchy-agent-pet](https://github.com/chthollyphile/omarchy-agent-pet), not this repository. Export the committed `HEAD` into a checkout of it, which also runs `omarchy plugin validate`:
+
+```bash
+tools/export-omarchy.sh --commit                       # writes ../omarchy-agent-pet and commits "Sync from agent-pet <sha>"
+git -C ../omarchy-agent-pet push
+```
+
+The export contains the plugin QML files, `lib/`, `bin/`, `assets.json`, `assets/config.json`, and `LICENSE`, plus the release repository's own README, `.gitignore`, and preview image from `packaging/omarchy/` and `docs/`. Standalone mode, the installer, and build tools stay here. After pushing, request verification of the new commit through the marketplace's plugin verification form.
+
 ### Project layout
 
 | Path | Description |
@@ -224,7 +237,8 @@ Packing is reproducible: the same assets always produce the same sha256. When th
 | `shell.qml`, `Commons/` | Standalone entry point and default theme |
 | `install.sh` | Installer |
 | `bin/` | Hook bridge and installer, asset download, transcript reader, built-in usage collector |
-| `tools/` | Build scripts for assets, shared logic, and default configuration; asset packing |
+| `tools/` | Build scripts for assets, shared logic, and default configuration; asset packing; Omarchy plugin export |
+| `packaging/omarchy/` | README and `.gitignore` for the plugin release repository |
 | `assets.json` | Download URL, sha256, and size of the asset release |
 | `docs/` | Screenshots |
 

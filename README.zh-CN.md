@@ -36,7 +36,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/chthollyphile/agent-pet/main
 安装脚本在每一步执行前都会询问：
 
 1. 检查依赖。
-2. 安装插件：检测到 Omarchy 时使用 `omarchy plugin add`（会显示 Omarchy 自身的安全提示）；否则 clone 到 `~/.local/share/agent-pet`，以独立模式运行。设置 `AGENT_PET_MODE=standalone` 可在 Omarchy 上同样使用独立模式。
+2. 安装插件：检测到 Omarchy 时使用 `omarchy plugin add` 安装插件发布仓库（会显示 Omarchy 自身的安全提示）；否则 clone 到 `~/.local/share/agent-pet`，以独立模式运行。设置 `AGENT_PET_MODE=standalone` 可在 Omarchy 上同样使用独立模式。
 3. 下载动画素材（约 177 MB，来自本仓库的 GitHub Release，下载后校验 sha256）。
 4. 接入 Claude Code / Codex hooks（修改配置前自动备份）。
 5. 启用插件；独立模式下启动实例，并给出开机启动的配置方法。
@@ -44,8 +44,10 @@ bash <(curl -fsSL https://raw.githubusercontent.com/chthollyphile/agent-pet/main
 ### 通过 `omarchy plugin add` 安装
 
 ```bash
-omarchy plugin add https://github.com/chthollyphile/agent-pet.git --enable
+omarchy plugin add https://github.com/chthollyphile/omarchy-agent-pet --enable
 ```
+
+[omarchy-agent-pet](https://github.com/chthollyphile/omarchy-agent-pet) 是插件发布仓库，由本仓库的 `tools/export-omarchy.sh` 生成，只包含插件运行所需的文件。
 
 `omarchy plugin add` 只会 clone 仓库，不执行任何安装步骤，因此首次启用时还没有动画素材。插件检测到素材缺失后会发送一条通知，点击“下载”后才开始下载，完成后宠物会自动出现。也可以手动执行：
 
@@ -211,6 +213,17 @@ git add assets.json && git commit -m "chore: update asset release metadata"
 
 打包结果可复现：相同的素材得到相同的 sha256。素材更新时，使用 `tools/pack-assets.sh --version 2` 发布新版本。
 
+### 发布 Omarchy 插件
+
+Omarchy 插件市场收录的是 [omarchy-agent-pet](https://github.com/chthollyphile/omarchy-agent-pet)，不是本仓库。把已提交的 `HEAD` 导出到它的本地 checkout，脚本同时会运行 `omarchy plugin validate`：
+
+```bash
+tools/export-omarchy.sh --commit                       # 写入 ../omarchy-agent-pet，并提交 "Sync from agent-pet <sha>"
+git -C ../omarchy-agent-pet push
+```
+
+导出内容为插件的 QML 文件、`lib/`、`bin/`、`assets.json`、`assets/config.json` 和 `LICENSE`，加上 `packaging/omarchy/` 与 `docs/` 中发布仓库专用的 README、`.gitignore` 和预览图。独立模式、安装脚本和构建工具只留在本仓库。推送后，通过插件市场的 plugin verification 表单申请验证新的 commit。
+
 ### 目录结构
 
 | 路径 | 说明 |
@@ -224,7 +237,8 @@ git add assets.json && git commit -m "chore: update asset release metadata"
 | `shell.qml`、`Commons/` | 独立模式的入口与默认主题 |
 | `install.sh` | 安装脚本 |
 | `bin/` | hook 转发与安装、素材下载、会话记录读取、内置用量采集 |
-| `tools/` | 素材、共享逻辑、默认配置的构建脚本，以及素材打包 |
+| `tools/` | 素材、共享逻辑、默认配置的构建脚本，素材打包，以及 Omarchy 插件导出 |
+| `packaging/omarchy/` | 插件发布仓库的 README 和 `.gitignore` |
 | `assets.json` | 素材 Release 的下载地址、sha256 与大小 |
 | `docs/` | 截图 |
 
