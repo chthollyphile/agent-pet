@@ -12,7 +12,7 @@ The character, animations, and core pet behavior are ported from [dsh-pet](https
 
 - **Pet behavior**: idling, random actions, turning, walking, click reactions, and physics-based dragging and throwing.
 - **Work status**: receives events through Claude Code / Codex hooks and switches between six states (thinking, working, reviewing results, waiting, success, error). The bubble can show the project name, the current tool and command, and either the agent's own step narration or a model-generated step summary.
-- **Attention alerts**: shows a bubble when approval is needed, when a task completes, or when it fails, and sends a desktop notification if the terminal that sent the event is not focused.
+- **Attention alerts**: shows a bubble when approval is needed, when a task completes, or when it fails, and sends a desktop notification (agent name and status only) if the terminal that sent the event is not focused.
 - **Usage**: plays an animation for the most constrained limit window and lists each window's usage and reset countdown. Uses Omarchy's `omarchy.agents` data on Omarchy and a built-in collector elsewhere.
 - **Murmurs and chat**: generated with `claude -p` or `codex exec`. By default the pet only calls a model when you explicitly ask it to.
 - **English and Chinese UI**: chosen automatically from the system locale, or set manually.
@@ -168,8 +168,10 @@ omarchy-shell agent-pet reload
 ## Privacy and model usage
 
 - **Model calls** happen only for the context-menu **Murmur** and **Chat** actions, the `whisper` and `chat` IPC methods, and the opt-in `whisperAuto` and `stepSummary.mode = "model"` settings. The pet's own model calls never trigger hooks.
-- **Data forwarded by hooks** is limited to the event name, session ID, project path, tool name, the first line of the tool arguments (up to 120 characters), notification text (up to 200), the first 300 characters of the turn's prompt, the final reply when a turn ends (up to 2000), and the transcript path. It travels over local IPC to Quickshell and never leaves your machine.
+- **Data forwarded by hooks** is limited to the event name, session ID, project path, tool name, the first line of the tool arguments (up to 120 characters), notification text (up to 200), the first 300 characters of the turn's prompt, the final reply when a turn ends (up to 2000), and the transcript path. It never leaves your machine.
 - **Session transcripts** are read only when `stepSummary.mode = "transcript"`, and only the last 400 KB each time.
+- **Process arguments carry no private content**, because other local users can read every process's command line. Hook events are passed through a private file in `$XDG_RUNTIME_DIR/agent-pet/` (directory mode 700, deleted right after the pet reads it), prompts and chat history reach `claude` / `codex` on standard input with the system prompt in a private file, and desktop notifications contain only the agent name and status. Text you pass yourself to `omarchy-shell agent-pet say` or `chat` is part of that command's line.
+- **`~/.local/state/agent-pet/`** (chat history, prompt files) is kept at mode 700.
 - **Network access** is used only outside Omarchy, to query Claude / Codex rate limits. Limit queries only read usage and do not consume any quota.
 
 ## Known limitations
