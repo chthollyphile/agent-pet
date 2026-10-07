@@ -1,6 +1,7 @@
 import QtQuick
 import qs.Commons
 import "lib/shared.mjs" as Shared
+import "lib/i18n.mjs" as I18n
 
 // 右键菜单：动作 → 分类 → 动画（树来自 dsh-pet 的 buildMenuTree）+ 工具项。
 // 逐级展开的独立列；打开期间 overlay 整窗接收输入，点空白处或 Esc 关闭。
@@ -24,14 +25,14 @@ Item {
 
   function show(targetPet, px, py) {
     pet = targetPet
-    var t = Shared.buildMenuTree(targetPet.anims)
+    var t = I18n.translateMenuTree(Shared.buildMenuTree(targetPet.anims), service.lang)
     var tools = []
-    if (targetPet.cfg.whisperEnabled !== false) tools.push({ label: service.llmBusy ? "碎碎念（生成中…）" : "碎碎念", action: "whisper" })
-    tools.push({ label: "对话", action: "chat" })
-    if (targetPet.cfg.balanceEnabled !== false) tools.push({ label: "查看用量", action: "usage" })
-    tools.push({ label: "回到初始位置", action: "home" })
-    tools.push({ label: "重载配置", action: "reload" })
-    tools.push({ label: "隐藏", action: "hide" })
+    if (targetPet.cfg.whisperEnabled !== false) tools.push({ label: service.tr(service.llmBusy ? "menuWhisperBusy" : "menuWhisper"), action: "whisper" })
+    tools.push({ label: service.tr("menuChat"), action: "chat" })
+    if (targetPet.cfg.balanceEnabled !== false) tools.push({ label: service.tr("menuUsage"), action: "usage" })
+    tools.push({ label: service.tr("menuHome"), action: "home" })
+    tools.push({ label: service.tr("menuReload"), action: "reload" })
+    tools.push({ label: service.tr("menuHide"), action: "hide" })
     tree = t.concat(tools)
     path = []
     originX = px

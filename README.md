@@ -6,6 +6,7 @@
 - 工作状态联动：hooks 事件切换思考 / 工作 / 整理 / 等待 / 成功 / 出错 6 档动画和头顶气泡。
 - 等待提醒：需要确认、任务完成、出错时冒气泡；发事件的终端不在前台时再发系统通知。
 - 用量动画：按最紧张窗口的百分比播放余额档位动画；气泡列出每个窗口的用量和重置倒计时（5 小时窗口精确到分钟，周额度精确到小时）。Omarchy 上直接用 `omarchy.agents` 的记录，其他环境用移植的内置采集；数据超过 60 秒的手动查看会先刷新再显示。
+- 中英双语界面：按系统 locale 自动选择，也可在设置里指定。
 - 碎碎念 / 对话：调用 `claude -p` 或 `codex exec`。**默认只在右键菜单或 IPC 显式触发时调用**；定时碎碎念（`whisperAuto`）和模型版步骤总结（`stepSummary.mode = "model"`）都默认关闭，开启后用单独指定的便宜模型（`autoModel`）。
 
 ## 致谢
@@ -92,8 +93,9 @@ Codex 第一次遇到新 hook 可能要求审核，在 Codex 里按提示信任�
 | `agents` | `{"claude":true,"codex":true}` | 接收哪些 agent 的事件 |
 | `usage` | `{"agent":"auto","source":"auto","refreshSec":900}` | `agent`：读哪个 agent，`auto` = 最近发来事件的那个。`source`：`auto` = 有 Omarchy 的 `omarchy-agent-usage-update` 就用 `omarchy.agents` 的记录，否则用内置采集；也可强制 `omarchy` / `builtin`。`refreshSec`：记录比这个秒数旧就在后台重新采集；手动查看时超过 60 秒就先刷新 |
 | `notify.onlyWhenUnfocused` | `true` | 只在发事件的终端不在前台时通知 |
+| `language` | `"auto"` | 界面语言：`auto` 按系统 locale（`LANGUAGE` → `LC_ALL` → `LC_MESSAGES` → `LANG`）判断，以 `zh` 开头用中文，否则英文；也可写 `zh` / `en`。英文时，没自定义的 `workStatusTexts`、`whisperPrompt` 换成英文版，菜单里的动画显示英文名；动画和表情包图片本身不变 |
 | `clickAction` | `"react"` | 左键点击宠物：`react` 播点击回应动画；`usage` 查看用量 |
-| `bubbleFont` | `{"family":"","file":"","size":14}` | 气泡字体。`file`（字体文件路径，支持 `~/`）优先于 `family`（已安装字体名，见 `fc-list : family`）；都留空 = 内置上首软糖体。菜单和对话框跟随 Omarchy 主题字体 |
+| `bubbleFont` | `{"family":"","file":"","size":14}` | 气泡字体。`file`（字体文件路径，支持 `~/`）优先于 `family`（已安装字体名，见 `fc-list : family`）；都留空 = 中文界面用内置上首软糖体，英文界面用 Noto Sans（没装时由 fontconfig 回退到其他无衬线字体）。菜单和对话框跟随 Omarchy 主题字体 |
 | `layer` | `"top"` | `overlay` = 全屏应用之上也显示 |
 | `pets[].screen` | 第一块屏 | 宠物所在显示器名（`hyprctl monitors`） |
 
@@ -104,6 +106,7 @@ Codex 第一次遇到新 hook 可能要求审核，在 Codex 里按提示信任�
 ```jsonc
 {
   // ---- 外观与交互
+  "language": "auto",                // auto / zh / en
   "bubbleFont": { "family": "WenQuanYi Micro Hei", "file": "", "size": 14 },
   "clickAction": "usage",            // 左键点击查看用量；"react" = 播点击回应动画
   "layer": "top",                    // "overlay" = 全屏应用之上也显示

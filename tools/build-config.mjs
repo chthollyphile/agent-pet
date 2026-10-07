@@ -39,7 +39,10 @@ Object.assign(cfg, {
   notify: { onlyWhenUnfocused: true },
   // 左键点击宠物：react = 播点击回应动画；usage = 查看用量（余额动画 + 各窗口重置倒计时气泡）
   clickAction: 'react',
-  // 气泡字体：file（字体文件路径，支持 ~/）优先于 family（已安装字体名，见 fc-list）；都留空 = 内置上首软糖体
+  // 界面语言：auto = 从系统 locale（LANGUAGE / LC_ALL / LC_MESSAGES / LANG）判断，以 zh 开头用中文，否则英文；也可写 zh / en
+  language: 'auto',
+  // 气泡字体：file（字体文件路径，支持 ~/）优先于 family（已安装字体名，见 fc-list）；
+  // 都留空 = 中文界面用内置上首软糖体，英文界面用 Noto Sans
   bubbleFont: { family: '', file: '', size: 14 },
   // 宠物所在的 layer-shell 层：top（普通窗口之上、全屏应用之下）或 overlay（永远置顶）
   layer: 'top',

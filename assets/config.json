@@ -320,6 +320,7 @@
     "onlyWhenUnfocused": true
   },
   "clickAction": "react",
+  "language": "auto",
   "bubbleFont": {
     "family": "",
     "file": "",

@@ -481,8 +481,8 @@ Item {
   function menuAction(leaf) {
     if (leaf.action === "whisper") {
       var r = service.requestWhisper(cfg.id)
-      if (r === "busy") showBubble("还在想上一句呢……", "", 4000)
-      else if (r === "ok") showBubble("让我想想说什么……", "", 0)
+      if (r === "busy") showBubble(service.tr("whisperBusy"), "", 4000)
+      else if (r === "ok") showBubble(service.tr("whisperThinking"), "", 0)
       return
     }
     if (leaf.action === "chat") {
@@ -567,7 +567,8 @@ Item {
     content: pet.bubbleContent
     memeDir: Qt.resolvedUrl("assets/memes/")
     readonly property var fontCfg: pet.service.config.bubbleFont || ({})
-    fontFamily: fontCfg.family || ""
+    // 没指定字体时：中文用内置上首软糖体；英文用 Noto Sans（软糖体的拉丁字母间距不理想），没装则由 fontconfig 回退
+    fontFamily: fontCfg.family || (pet.service.lang === "en" && !fontCfg.file ? "Noto Sans" : "")
     fontFile: fontCfg.file ? String(fontCfg.file).replace(/^~(?=\/)/, pet.service.home) : ""
     fontSize: Number(fontCfg.size) > 0 ? Number(fontCfg.size) : 14
     // 头顶居中，夹在屏幕内
@@ -618,6 +619,7 @@ Item {
   // 当前展示的会话 + 档位；只有它变化才切动画，工具 / 命令 / 总结变化只刷新气泡
   property string wsSig: ""
   property string wsLine: ""
+  property string wsLang: ""
 
   function applyWorkStatus() {
     if (cfg.workStatusEnabled === false) return
@@ -634,7 +636,8 @@ Item {
     var sig = ws.key + "|" + ws.state
     var changed = sig !== wsSig
     wsSig = sig
-    if (changed) {
+    if (changed || wsLang !== service.lang) {
+      wsLang = service.lang
       var texts = service.config.workStatusTexts || []
       wsLine = texts[idx] && texts[idx].length ? texts[idx][Math.floor(Math.random() * texts[idx].length)] : ""
     }
@@ -647,7 +650,7 @@ Item {
     // model 模式的总结只描述进行中的步骤；transcript 模式结束时显示 agent 的最后一句回复
     var showSummary = ws.summary && (mode === "transcript" || (mode === "model" && !terminal))
     var main = showSummary ? ws.summary : wsLine
-    if (!showDetail && ws.state === "waiting" && ws.tool) main += "（" + ws.tool + "）"
+    if (!showDetail && ws.state === "waiting" && ws.tool) main += service.tr("toolSuffix", { tool: ws.tool })
     if (main) lines.push(main)
     if (showDetail && ws.tool && !terminal) lines.push(WS.formatDetail(ws.tool, ws.detail, ws.cwd))
     wsBubble = lines.length > 1 ? { text: lines.join("\n"), meme: "" } : null

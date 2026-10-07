@@ -51,7 +51,7 @@ Rectangle {
     Text {
       anchors.verticalCenter: parent.verticalCenter
       visible: input.text === ""
-      text: chat.service && chat.service.llmBusy ? "还在想上一句……" : "和它说点什么，回车发送"
+      text: chat.service ? chat.service.tr(chat.service.llmBusy ? "chatBusy" : "chatPlaceholder") : ""
       color: Color.muted
       font: input.font
     }

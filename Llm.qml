@@ -1,12 +1,14 @@
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import "lib/i18n.mjs" as I18n
 
 // 无头调用 claude -p / codex exec 生成一句话。一次只跑一个请求。
 // AGENT_PET_INTERNAL=1：agent-pet-hook 看到它直接退出，宠物自己的调用不会回灌成工作状态事件。
 Scope {
   id: llm
 
+  property string lang: "zh"
   property string home: ""
   property string stateDir: ""
   readonly property bool busy: proc.running
@@ -76,17 +78,17 @@ Scope {
     onExited: function(exitCode) {
       timeout.stop()
       if (llm.timedOut) {
-        llm.finished(llm.petId, llm.kind, "想了太久没想出来……（请求超时）", "", true)
+        llm.finished(llm.petId, llm.kind, I18n.t(llm.lang, "llmTimeout"), "", true)
         return
       }
       if (exitCode !== 0) {
         var reason = String(err.text || out.text || "").trim().split("\n").pop()
-        llm.finished(llm.petId, llm.kind, "生成失败：" + (reason || ("退出码 " + exitCode)), "", true)
+        llm.finished(llm.petId, llm.kind, I18n.t(llm.lang, "llmFailed", { reason: reason || I18n.t(llm.lang, "llmExitCode", { code: exitCode }) }), "", true)
         return
       }
       var reply = llm.parseReply(out.text)
       if (!reply.text) {
-        llm.finished(llm.petId, llm.kind, "生成失败：返回了空内容", "", true)
+        llm.finished(llm.petId, llm.kind, I18n.t(llm.lang, "llmEmpty"), "", true)
         return
       }
       llm.finished(llm.petId, llm.kind, reply.text, llm.kind === "whisper" ? llm.meme : reply.meme, false)
