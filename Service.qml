@@ -19,7 +19,6 @@ Scope {
   readonly property string pluginDir: decodeURIComponent(String(Qt.resolvedUrl(".")).replace(/^file:\/\//, "").replace(/\/$/, ""))
   readonly property string userConfigPath: home + "/.config/agent-pet/config.jsonc"
   readonly property string stateDir: home + "/.local/state/agent-pet"
-  readonly property string usageDir: home + "/.local/state/omarchy/agents/usage"
 
   // ------------------------------------------------------------ 配置
   property var config: ({})
@@ -181,42 +180,134 @@ Scope {
   }
 
   // ------------------------------------------------------------ 用量
-  property var usageSummaries: ({})
+  // 数据源：
+  //   omarchy = omarchy.agents 插件的记录（由 omarchy-agent-usage-update 生成），Omarchy 上直接用
+  //   builtin = bin/agent-pet-usage 自己采集，行为移植自 omarchy agents 的采集脚本，供非 Omarchy 环境使用
+  // usage.source 可强制指定；默认 auto = 能找到 omarchy-agent-usage-update 就用 omarchy
+  property string omarchyCollector: ""
+  property bool usageSourceChecked: false
+  readonly property string usageSource: {
+    var s = (config.usage || {}).source
+    if (s === "omarchy" || s === "builtin") return s
+    return omarchyCollector ? "omarchy" : "builtin"
+  }
+  readonly property string usageDir: !usageSourceChecked ? ""
+    : usageSource === "omarchy" ? home + "/.local/state/omarchy/agents/usage" : stateDir + "/usage"
+  // 原始记录：倒计时在显示时才计算，避免读取后过一阵再显示时倒计时不准
+  property var usageRecords: ({})
   property var usageTiers: ({})
+  property bool usageShowPending: false
+  property bool usageShowManual: false
+
+  Process {
+    running: true
+    command: ["bash", "-c", "command -v omarchy-agent-usage-update || { [ -x \"$OMARCHY_PATH/bin/omarchy-agent-usage-update\" ] && echo \"$OMARCHY_PATH/bin/omarchy-agent-usage-update\"; } || true"]
+    stdout: StdioCollector { id: collectorOut }
+    onExited: {
+      root.omarchyCollector = collectorOut.text.trim()
+      root.usageSourceChecked = true
+      console.log("[lia.pet] 用量数据源: " + root.usageSource + (root.usageSource === "omarchy" ? " (" + root.omarchyCollector + ")" : ""))
+    }
+  }
 
   function usageAgent() {
     var u = config.usage || {}
     return u.agent && u.agent !== "auto" ? u.agent : lastAgent
   }
 
+  function enabledUsageAgents() {
+    return ["claude", "codex"].filter(function(a) { return agentEnabled(a) })
+  }
+
+  function usageAgeMs(agent) {
+    var rec = usageRecords[agent]
+    var t = rec ? Date.parse(rec.updatedAt) : NaN
+    return isFinite(t) ? Date.now() - t : Infinity
+  }
+
   function updateUsage(agent, text) {
-    var summary = null
+    var rec = null
     try {
-      summary = Usage.summarize(JSON.parse(text), Date.now())
+      rec = JSON.parse(text)
     } catch (e) {}
-    var next = Object.assign({}, usageSummaries)
-    next[agent] = summary
-    usageSummaries = next
+    var next = Object.assign({}, usageRecords)
+    next[agent] = rec
+    usageRecords = next
+    var summary = rec ? Usage.summarize(rec, Date.now()) : null
     var prevTier = usageTiers[agent]
     var tiers = Object.assign({}, usageTiers)
     tiers[agent] = summary ? summary.tier : -1
     usageTiers = tiers
-    // 首次读取不播；之后档位变化时播一次
-    if (summary && prevTier !== undefined && prevTier !== summary.tier && agent === usageAgent()) usageShow(summary)
+    // 首次读取不播；之后档位变化时播一次（等待中的手动查看会自己显示，这里不重复）
+    if (summary && prevTier !== undefined && prevTier !== summary.tier && agent === usageAgent() && !usageShowPending)
+      usageShow(summary)
   }
 
+  // 先刷新再显示：记录超过 60 秒没更新就重新采集（manual = 用户主动查看，期间提示"正在刷新"）
   function showUsage(manual) {
-    var summary = usageSummaries[usageAgent()]
-    if (!summary) {
-      var other = usageAgent() === "claude" ? "codex" : "claude"
-      summary = usageSummaries[other]
+    var agent = usageAgent()
+    if (!usageRecords[agent] && usageRecords[agent === "claude" ? "codex" : "claude"]) agent = agent === "claude" ? "codex" : "claude"
+    if (usageAgeMs(agent) > 60000 && usageSourceChecked) {
+      if (manual) speak("", "正在刷新用量……", "", "info")
+      usageShowManual = usageShowManual || manual
+      refreshUsage([agent], true)
+      return
     }
+    displayUsage(manual)
+  }
+
+  function displayUsage(manual) {
+    var agent = usageAgent()
+    var rec = usageRecords[agent] || usageRecords[agent === "claude" ? "codex" : "claude"]
+    var summary = rec ? Usage.summarize(rec, Date.now()) : null
     if (summary) usageShow(summary)
-    else if (manual) speak("", "还没有用量记录：omarchy.agents 还没生成 Claude / Codex 的数据哦", "", "info")
+    else if (manual) speak("", usageSource === "omarchy"
+      ? "还没有用量记录：omarchy.agents 还没生成 Claude / Codex 的数据哦"
+      : "没读到用量：确认 claude / codex 已登录", "", "info")
+  }
+
+  function refreshUsage(agents, showAfter) {
+    if (showAfter) usageShowPending = true
+    if (usageProc.running || !usageSourceChecked || !agents.length) return
+    var cmd = usageSource === "omarchy"
+      ? [omarchyCollector || "omarchy-agent-usage-update", "--limits-only"]
+      : [root.pluginDir + "/bin/agent-pet-usage"]
+    usageProc.command = cmd.concat(agents)
+    usageProc.running = true
+    usageRefreshTimeout.restart()
+  }
+
+  Process {
+    id: usageProc
+    onExited: {
+      usageRefreshTimeout.stop()
+      claudeUsageFile.reload()
+      codexUsageFile.reload()
+      if (root.usageShowPending) usageShowDelay.restart()
+    }
+  }
+
+  Timer {
+    id: usageRefreshTimeout
+    interval: 20000
+    onTriggered: if (usageProc.running) usageProc.signal(15)
+  }
+
+  // 等文件重新读完再显示；刷新失败时显示旧数据（气泡会注明是多久前的）
+  Timer {
+    id: usageShowDelay
+    interval: 400
+    onTriggered: {
+      var manual = root.usageShowManual
+      root.usageShowPending = false
+      root.usageShowManual = false
+      root.displayUsage(manual)
+    }
   }
 
   FileView {
-    path: root.usageDir + "/claude.json"
+    id: claudeUsageFile
+    path: root.usageDir ? root.usageDir + "/claude.json" : ""
     watchChanges: true
     printErrors: false
     onFileChanged: reload()
@@ -224,19 +315,34 @@ Scope {
   }
 
   FileView {
-    path: root.usageDir + "/codex.json"
+    id: codexUsageFile
+    path: root.usageDir ? root.usageDir + "/codex.json" : ""
     watchChanges: true
     printErrors: false
     onFileChanged: reload()
     onLoaded: root.updateUsage("codex", text())
   }
 
+  // 定时显示（余额动画周期）
   Timer {
     id: usageTimer
     interval: Math.max(60, Number((root.config.eventsRefreshSec || {}).balance) || 1800) * 1000
     running: root.ready
     repeat: true
     onTriggered: root.showUsage(false)
+  }
+
+  // 后台保鲜：记录比 usage.refreshSec 旧就重新采集（Omarchy 上 agents 组件通常已在刷新，这里基本不触发）
+  Timer {
+    interval: Math.max(60, Number((root.config.usage || {}).refreshSec) || 900) * 1000
+    running: root.ready && root.usageSourceChecked
+    repeat: true
+    triggeredOnStart: true
+    onTriggered: {
+      var limit = interval
+      var stale = root.enabledUsageAgents().filter(function(a) { return root.usageAgeMs(a) > limit })
+      if (stale.length) root.refreshUsage(stale, false)
+    }
   }
 
   // ------------------------------------------------------------ 碎碎念 / 对话（只在显式触发或 whisperAuto 开启时调用 LLM）
@@ -513,7 +619,12 @@ Scope {
         workStatus: root.workStatus,
         sessions: root.wsStore.sessions,
         lastAgent: root.lastAgent,
-        usage: root.usageSummaries,
+        usageSource: root.usageSource,
+        usage: Object.keys(root.usageRecords).reduce(function(o, a) {
+          var r = root.usageRecords[a]
+          o[a] = r ? { updatedAt: r.updatedAt, summary: Usage.summarize(r, Date.now()) } : null
+          return o
+        }, {}),
         llmBusy: llm.busy,
         autoBusy: autoLlm.busy,
         autoModel: root.autoModelFor(),

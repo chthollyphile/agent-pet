@@ -312,7 +312,9 @@
     "codex": true
   },
   "usage": {
-    "agent": "auto"
+    "agent": "auto",
+    "source": "auto",
+    "refreshSec": 900
   },
   "notify": {
     "onlyWhenUnfocused": true

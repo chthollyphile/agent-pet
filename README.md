@@ -1,11 +1,11 @@
 # agent-pet
 
-把 [dsh-pet](https://github.com/PC2005-cloud/dsh-pet) 的桌宠移植成 Omarchy 4 的 Quickshell 插件（`lia.pet`），并接入 Claude Code / Codex：
+把 [dsh-pet](https://github.com/PC2005-cloud/dsh-pet) 的桌宠移植到 Quickshell，并接入 Claude Code / Codex。可以作为 Omarchy 4 插件（`lia.pet`）运行，也可以只依赖 Quickshell 独立运行（见「独立模式」）。
 
 - 待机、随机动作、转向、行走、点击 Q 弹、拖拽甩抛反弹（物理与抽选逻辑直接复用 dsh-pet 的纯函数）。
 - 工作状态联动：hooks 事件切换思考 / 工作 / 整理 / 等待 / 成功 / 出错 6 档动画和头顶气泡。
 - 等待提醒：需要确认、任务完成、出错时冒气泡；发事件的终端不在前台时再发系统通知。
-- 用量动画：读取 `omarchy.agents` 生成的用量记录，按最紧张窗口的百分比播放余额档位动画；气泡列出每个窗口的用量和重置倒计时（5 小时窗口精确到分钟，周额度精确到小时）。
+- 用量动画：按最紧张窗口的百分比播放余额档位动画；气泡列出每个窗口的用量和重置倒计时（5 小时窗口精确到分钟，周额度精确到小时）。Omarchy 上直接用 `omarchy.agents` 的记录，其他环境用移植的内置采集；数据超过 60 秒的手动查看会先刷新再显示。
 - 碎碎念 / 对话：调用 `claude -p` 或 `codex exec`。**默认只在右键菜单或 IPC 显式触发时调用**；定时碎碎念（`whisperAuto`）和模型版步骤总结（`stepSummary.mode = "model"`）都默认关闭，开启后用单独指定的便宜模型（`autoModel`）。
 
 ## 致谢
@@ -19,19 +19,26 @@
 - **纯逻辑代码**：`src/shared` 中的物理（拖拽 / 甩抛 / Q 弹）、动画抽选、移动规划、菜单树，由 `tools/build-shared.mjs` 原样打包进 `lib/shared.mjs`。
 - 工作状态 6 档的设计与档位顺序。
 
-agent-pet 新写的部分：Quickshell / Omarchy 插件外壳（QML）、Claude Code / Codex hooks 桥接、用量与 LLM 调用。许可证见 [LICENSE](LICENSE)，保留了 dsh-pet 的版权声明。
+用量采集移植自 **[Omarchy](https://github.com/basecamp/omarchy)**（MIT，© David Heinemeier Hansson）的 `omarchy.agents` 插件：在 Omarchy 上直接使用它的 `omarchy-agent-usage-update` 和记录文件；在其他环境中，`bin/agent-pet-usage` 按相同行为采集额度（Claude 的 OAuth 用量接口、Codex app-server 的 `account/rateLimits/read`，以及百分比换算、模型专属窗口、探测复用与过期处理），输出相同格式的记录。只移植了额度部分，没有移植本地 token 统计。
+
+agent-pet 新写的部分：Quickshell / Omarchy 插件外壳（QML）、Claude Code / Codex hooks 桥接、步骤总结与 LLM 调用。许可证见 [LICENSE](LICENSE)，保留了 dsh-pet 和 Omarchy 的版权声明。
 
 ## 安装
 
-依赖：`qt6-imageformats`（WebP 解码）、`ffmpeg`（带 libvpx / libwebp）、`jq`、node。
+依赖：Quickshell、`qt6-imageformats`（WebP 解码）、`ffmpeg`（带 libvpx / libwebp）、`jq`、node、python3（独立模式的用量采集）。
 
 构建需要 dsh-pet 的源码和素材，默认放在本仓库旁边（`../dsh-pet`）。也可以把路径作为参数传给 `tools/build-*.{sh,mjs}`。
 
 ```bash
 git clone https://github.com/PC2005-cloud/dsh-pet.git ../dsh-pet
-sudo pacman -S qt6-imageformats   # 装完要重启 shell：omarchy-restart-shell
+sudo pacman -S qt6-imageformats   # 装完要重启已在运行的 Quickshell
 npm install
 npm run build                     # lib/shared.mjs + assets/config.json + assets/webp（约 170 MB）
+```
+
+### Omarchy 插件模式
+
+```bash
 ln -s "$PWD" ~/.config/omarchy/plugins/lia.pet
 omarchy-shell shell rescanPlugins
 omarchy plugin enable lia.pet
@@ -41,6 +48,24 @@ omarchy plugin enable lia.pet
 
 - 插件目录是符号链接，omarchy 的 inotify 监视不会跟进改动。
 - `omarchy-shell shell rescanPlugins` 只会刷新 `Service.qml`。`Pet.qml`、`PetOverlay.qml` 等子组件仍沿用旧的已编译类型（宿主 `destroy()` 延迟执行，清缓存时旧类型还被引用）。改了子组件要执行 `omarchy-restart-shell`。
+
+### 独立模式（只依赖 Quickshell）
+
+不需要 Omarchy，适用于 Hyprland、Sway、niri 等支持 layer-shell 的 Wayland 混成器（GNOME 不支持 layer-shell）。
+
+```bash
+qs -p "$PWD"                      # 启动；改动 QML 后 Quickshell 会自动重载
+qs ipc -p "$PWD" call lia.pet state
+```
+
+开机启动：Hyprland 在配置里加 `exec-once = qs -p /path/to/agent-pet`，其他环境可写一个 systemd 用户服务。
+
+与插件模式的差别：
+
+- 菜单和对话框用 `Commons/` 里的默认主题。`qs.Commons` 解析到当前 shell 的根目录，所以作为 Omarchy 插件运行时用的是 Omarchy 的主题，独立运行时用这里的。
+- 用量数据：找不到 `omarchy-agent-usage-update` 时自动改用内置采集 `bin/agent-pet-usage`，记录写到 `~/.local/state/agent-pet/usage/`。
+- hook 先尝试 `omarchy-shell lia.pet event`，失败再发给 `qs ipc -p <仓库目录>`，两种模式用同一套 hooks 配置。
+- 不要同时运行两种模式，否则屏幕上会有两只宠物（hooks 事件只会发给 Omarchy 那只）。
 
 ### 接入 Claude Code / Codex
 
@@ -65,12 +90,65 @@ Codex 第一次遇到新 hook 可能要求审核，在 Codex 里按提示信任�
 | `stepSummary` | `{"mode":"off","intervalSec":60}` | 气泡里的步骤总结。`mode`：`off` 关闭；`transcript` 读会话记录（`transcript_path`）里 agent 自己写的最新一段话（只读文件末尾 400 KB，不调用模型，任务结束时显示最后一句回复）；`model` 用 `autoModel` 把用户请求和最近 8 步操作概括成一句话（新一轮第一步后约 8 秒先总结一次，之后最多每 `intervalSec` 秒一次，且只在有新步骤时调用）。旧写法 `enabled: true` 等同于 `model` |
 | `autoModel` | `{"provider":"claude","claudeModel":"haiku","codexModel":"gpt-5.6-luna"}` | 自动任务（步骤总结、定时碎碎念）用的模型，默认是便宜的小模型，不跟随 CLI 的默认模型；Codex 另外以低推理强度运行 |
 | `agents` | `{"claude":true,"codex":true}` | 接收哪些 agent 的事件 |
-| `usage.agent` | `"auto"` | 用量动画读哪个 agent；auto = 最近发来事件的那个 |
+| `usage` | `{"agent":"auto","source":"auto","refreshSec":900}` | `agent`：读哪个 agent，`auto` = 最近发来事件的那个。`source`：`auto` = 有 Omarchy 的 `omarchy-agent-usage-update` 就用 `omarchy.agents` 的记录，否则用内置采集；也可强制 `omarchy` / `builtin`。`refreshSec`：记录比这个秒数旧就在后台重新采集；手动查看时超过 60 秒就先刷新 |
 | `notify.onlyWhenUnfocused` | `true` | 只在发事件的终端不在前台时通知 |
 | `clickAction` | `"react"` | 左键点击宠物：`react` 播点击回应动画；`usage` 查看用量 |
 | `bubbleFont` | `{"family":"","file":"","size":14}` | 气泡字体。`file`（字体文件路径，支持 `~/`）优先于 `family`（已安装字体名，见 `fc-list : family`）；都留空 = 内置上首软糖体。菜单和对话框跟随 Omarchy 主题字体 |
 | `layer` | `"top"` | `overlay` = 全屏应用之上也显示 |
 | `pets[].screen` | 第一块屏 | 宠物所在显示器名（`hyprctl monitors`） |
+
+### 配置范例
+
+`~/.config/agent-pet/config.jsonc`，只写想改的字段，其余用内置默认值。注意顶层字段是**整段替换**：比如写了 `stepSummary`，就要把 `mode` 和 `intervalSec` 都写上，没写的子字段不会从默认值补回来。
+
+```jsonc
+{
+  // ---- 外观与交互
+  "bubbleFont": { "family": "WenQuanYi Micro Hei", "file": "", "size": 14 },
+  "clickAction": "usage",            // 左键点击查看用量；"react" = 播点击回应动画
+  "layer": "top",                    // "overlay" = 全屏应用之上也显示
+
+  // ---- 工作状态气泡
+  "workStatusDetail": true,          // 显示工具名和命令摘要，如 "Bash · npm test"
+  "stepSummary": {
+    "mode": "transcript",            // off / transcript（agent 自己的话，不调模型）/ model（模型总结）
+    "intervalSec": 60                // 只对 model 生效：两次总结的最短间隔，≥ 20
+  },
+  "notify": { "onlyWhenUnfocused": true },
+  "agents": { "claude": true, "codex": true },
+
+  // ---- 用量
+  "usage": {
+    "agent": "auto",                 // auto / claude / codex
+    "source": "auto",                // auto / omarchy / builtin
+    "refreshSec": 900
+  },
+
+  // ---- 模型
+  // 手动触发的碎碎念 / 对话
+  "llm": { "provider": "claude", "claudeModel": "haiku", "codexModel": "" },
+  // 自动任务（stepSummary.mode = "model"、定时碎碎念）
+  "autoModel": { "provider": "claude", "claudeModel": "haiku", "codexModel": "gpt-5.6-luna" },
+  "whisperAuto": false,              // 定时碎碎念，开启后每 eventsRefreshSec.whisper 秒调用一次模型
+  "eventsRefreshSec": { "balance": 1800, "whisper": 600 },
+
+  // ---- 宠物本身（写了 pets 就要写全每只宠物的字段）
+  "pets": [
+    {
+      "name": "蓝毛小女仆",
+      "id": "main",
+      "size": 300,
+      "balanceEnabled": true,
+      "whisperEnabled": true,
+      "workStatusEnabled": true,
+      "fixedEnabled": false,         // true = 不自己走动、不自己转身
+      "display": "both",
+      "screen": "eDP-1",             // 可省略，默认第一块屏
+      "position": { "corner": "bottom-right", "marginX": 24, "marginY": 0 }
+    }
+  ]
+}
+```
 
 ## IPC
 
@@ -88,6 +166,8 @@ omarchy-shell lia.pet event '{"agent":"claude","event":"Stop","session":"x","cwd
 
 ## 已知限制
 
+- 前台检测用的是 `hyprctl`；非 Hyprland 环境下一律当作不在前台，每次都会发通知。
+
 - 宠物只在所属屏幕内活动，不跨屏飞行。
 - 前台检测沿进程父链查找 Hyprland 当前窗口的 pid，在 tmux / ssh 里检测不到，会当作不在前台。
 - 多宠物互相碰撞（`physics.petCollision`）、点击积分、pet pack 暂未移植。
@@ -102,5 +182,6 @@ omarchy-shell lia.pet event '{"agent":"claude","event":"Stop","session":"x","cwd
 | `PetMenu.qml` / `ChatInput.qml` / `Bubble.qml` / `Llm.qml` | 右键菜单 / 对话框 / 气泡 / CLI 调用 |
 | `lib/shared.mjs` | dsh-pet `src/shared` 打包产物，勿手改 |
 | `lib/work-status.mjs` / `lib/usage.mjs` / `lib/jsonc.mjs` | hooks 事件聚合 / 用量解析 / JSONC |
-| `bin/` | hook 桥接与安装脚本 |
+| `shell.qml` / `Commons/` | 独立模式入口与默认主题 |
+| `bin/` | hook 桥接与安装脚本、会话记录读取（`agent-pet-last-message`）、内置用量采集（`agent-pet-usage`，移植自 Omarchy） |
 | `tools/` | 素材、共享逻辑、配置的构建脚本 |

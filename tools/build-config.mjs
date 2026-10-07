@@ -31,8 +31,10 @@ Object.assign(cfg, {
   autoModel: { provider: 'claude', claudeModel: 'haiku', codexModel: 'gpt-5.6-luna' },
   // 接收哪些 agent 的 hooks 事件
   agents: { claude: true, codex: true },
-  // 用量动画读哪个 agent 的记录：auto = 最近发来事件的那个
-  usage: { agent: 'auto' },
+  // 用量：agent = 读哪个 agent（auto = 最近发来事件的那个）；
+  // source = 数据来源（auto = 有 Omarchy 的 omarchy-agent-usage-update 就用 omarchy.agents 的记录，否则用内置采集 bin/agent-pet-usage）；
+  // refreshSec = 记录超过这个秒数就在后台重新采集
+  usage: { agent: 'auto', source: 'auto', refreshSec: 900 },
   // true = 只有发事件的终端不在前台时才弹系统通知
   notify: { onlyWhenUnfocused: true },
   // 左键点击宠物：react = 播点击回应动画；usage = 查看用量（余额动画 + 各窗口重置倒计时气泡）
