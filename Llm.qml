@@ -25,8 +25,8 @@ Scope {
   property string meme: ""
   property bool timedOut: false
 
-  // failed = true 时 text 是给用户看的失败原因
-  signal finished(string petId, string kind, string text, string meme, bool failed)
+  // failed = true 时 text 是给用户看的失败原因；extra = 回复 JSON 里的其他字段（如 reminders），没有时为 {}
+  signal finished(string petId, string kind, string text, string meme, bool failed, var extra)
 
   // cheap = 自动任务：Codex 额外压低推理强度
   function run(provider, model, systemPrompt, prompt, petId, kind, meme, cheap) {
@@ -77,17 +77,17 @@ Scope {
     return true
   }
 
-  // 对话要求模型回 {"text","meme"}；不守规矩时整段当文本
+  // 对话要求模型回 {"text","meme"}（可能附带 reminders）；不守规矩时整段当文本
   function parseReply(raw) {
     var text = String(raw || "").trim()
     var m = text.match(/\{[\s\S]*\}/)
     if (m) {
       try {
         var obj = JSON.parse(m[0])
-        if (obj && typeof obj.text === "string") return { text: obj.text.trim(), meme: String(obj.meme || "") }
+        if (obj && typeof obj.text === "string") return { text: obj.text.trim(), meme: String(obj.meme || ""), extra: obj }
       } catch (e) {}
     }
-    return { text: text.replace(/^["“]|["”]$/g, ""), meme: "" }
+    return { text: text.replace(/^["“]|["”]$/g, ""), meme: "", extra: {} }
   }
 
   FileView {
@@ -115,20 +115,20 @@ Scope {
     onExited: function(exitCode) {
       timeout.stop()
       if (llm.timedOut) {
-        llm.finished(llm.petId, llm.kind, I18n.t(llm.lang, "llmTimeout"), "", true)
+        llm.finished(llm.petId, llm.kind, I18n.t(llm.lang, "llmTimeout"), "", true, {})
         return
       }
       if (exitCode !== 0) {
         var reason = String(err.text || out.text || "").trim().split("\n").pop()
-        llm.finished(llm.petId, llm.kind, I18n.t(llm.lang, "llmFailed", { reason: reason || I18n.t(llm.lang, "llmExitCode", { code: exitCode }) }), "", true)
+        llm.finished(llm.petId, llm.kind, I18n.t(llm.lang, "llmFailed", { reason: reason || I18n.t(llm.lang, "llmExitCode", { code: exitCode }) }), "", true, {})
         return
       }
       var reply = llm.parseReply(out.text)
       if (!reply.text) {
-        llm.finished(llm.petId, llm.kind, I18n.t(llm.lang, "llmEmpty"), "", true)
+        llm.finished(llm.petId, llm.kind, I18n.t(llm.lang, "llmEmpty"), "", true, {})
         return
       }
-      llm.finished(llm.petId, llm.kind, reply.text, llm.kind === "whisper" ? llm.meme : reply.meme, false)
+      llm.finished(llm.petId, llm.kind, reply.text, llm.kind === "whisper" ? llm.meme : reply.meme, false, reply.extra)
     }
   }
 

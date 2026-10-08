@@ -58,6 +58,28 @@ Codex 只发 `UserPromptSubmit`、`PreToolUse`、`PostToolUse`、`PermissionRequ
 
 `run` 命令在事件的项目目录（cwd）下运行，**完整事件 JSON 从 stdin 传入**，不会出现在进程参数里。可以用 `jq` 取字段。
 
+## 聊天设提醒 `reminders`
+
+在聊天框（右键菜单 →「对话」）里直接说，比如：
+
+- 「10 分钟后提醒我喝水」「周三开会前半小时叫我」
+- 「每天 9 点提醒我站会」「工作日 18:30 提醒我下班」
+- 「我有哪些提醒？」「把喝水那个取消掉」
+
+模型只负责听懂这句话，回复里附带结构化指令。计算时间、校验、保存和到点触发都由本地代码完成。气泡会在模型回复后面追加实际排定的结果，比如 `⏰ 15:00 开会`。模型理解错了，一眼就能看出来。说的时间已经过去，或者模型给出的格式不对，会提示你换个说法。
+
+| 字段 | 默认 | 说明 |
+|---|---|---|
+| `enabled` | `true` | 关闭后聊天不再带提醒功能，已有提醒也不再触发 |
+| `play` | `["点击回应-元气挥手"]` | 到点时播的动画，`[]` 不播 |
+| `notify` | `true` | 到点时同时发桌面通知（不管终端是否在前台） |
+
+- 提醒保存在 `~/.local/state/agent-pet/reminders.json`，重启后仍在。关机或挂起期间错过的提醒，启动后补报，并注明「迟到了」。
+- 到点时气泡停留 30 秒。精度约 1 秒。
+- 设置和管理提醒需要调用模型（用 `llm` 配置的 CLI），会等几秒；到点触发不需要模型。
+- 聊天时，当前时间和现有提醒列表会附在发给模型的系统提示里。
+- 没有图形界面时也可以用命令行：`omarchy-shell agent-pet chat "10分钟后提醒我喝水"`。注意这句话会出现在进程参数里。`omarchy-shell agent-pet reminders` 以 JSON 列出现有提醒。
+
 ## 示例
 
 ```jsonc
@@ -107,4 +129,4 @@ qs ipc -p <插件目录> call agent-pet state        # automations 字段：已�
 
 - 调度每 15 秒按系统时间检查一次。电脑挂起期间错过的整点和 `at` 时间点，恢复后超过 2 分钟的不会补报。
 - 这个分支不能发布到插件市场：`tools/export-omarchy.sh` 遇到含 `Automation.qml` 的提交会拒绝导出，发布请用 `--ref main`。
-- 测试：`node --test tools/test-automation.mjs`（纯逻辑），`python3 tools/test-runtime.py`（含自动化集成测试）。
+- 测试：`node --test tools/test-automation.mjs tools/test-reminders.mjs`（纯逻辑），`python3 tools/test-runtime.py`（含自动化集成测试）。

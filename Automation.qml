@@ -2,9 +2,10 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import "lib/automation.mjs" as Auto
+import "lib/reminders.mjs" as Reminders
 import "lib/work-status.mjs" as WS
 
-// 自动化：整点报时、定时任务、事件触发规则（配置见 lib/automation.mjs 开头）。
+// 自动化：整点报时、定时任务、事件触发规则、聊天设提醒（配置见 lib/automation.mjs 开头）。
 // 调度按墙上时钟每 15 秒检查一次，挂起恢复后不会错乱。
 // run 命令带 AGENT_PET_INTERNAL=1（命令里再调 claude / codex 不会回灌成工作状态事件），
 // 事件内容只走 stdin（JSON），不进进程参数。
@@ -47,6 +48,7 @@ Scope {
       var out = Auto.tick(auto.sched, auto.norm, Date.now())
       if (out.chime >= 0) auto.chime(out.chime)
       out.tasks.forEach(function(key) { auto.runTask(key, false) })
+      auto.checkReminders()
     }
   }
 
@@ -111,6 +113,94 @@ Scope {
         auto.act(rule.pet, Auto.render(rule.say, Object.assign({ output: output, exit: exitCode }, vars)), rule.play)
       })
     })
+  }
+
+  // ------------------------------------------------------------ 聊天设提醒
+  // 模型在聊天回复里给出结构化指令，本地校验、存储、到点触发（见 lib/reminders.mjs）
+  readonly property bool remindersEnabled: norm.reminders.enabled
+  property var reminders: []
+  property bool remindersLoaded: false
+
+  // 执行回复里的指令，返回追加了实际结果的气泡文字
+  function applyReminderActions(text, actions) {
+    if (!remindersLoaded) return text
+    var now = Date.now()
+    var lang = service.lang
+    var res = Reminders.apply(reminders, actions, now)
+    var lines = []
+    res.added.forEach(function(r) { lines.push("⏰ " + Reminders.formatLine(r, now, lang)) })
+    res.canceled.forEach(function(r) { lines.push(service.tr("remindCanceled", { line: Reminders.formatLine(r, now, lang) })) })
+    res.errors.forEach(function(key) { lines.push(service.tr(key)) })
+    if (res.showList) {
+      if (!res.list.length) lines.push(service.tr("remindNone"))
+      else res.list.forEach(function(r, i) { lines.push((i + 1) + ". " + Reminders.formatLine(r, now, lang)) })
+    }
+    if (res.added.length || res.canceled.length) {
+      reminders = res.list
+      saveReminders()
+      scheduleReminder()
+    }
+    return lines.length ? text + "\n" + lines.join("\n") : text
+  }
+
+  function checkReminders() {
+    if (!remindersLoaded) return
+    var res = Reminders.collectDue(reminders, Date.now())
+    if (res.fired.length) {
+      reminders = res.list
+      saveReminders()
+      res.fired.forEach(function(f) { auto.fireReminder(f.reminder, f.late) })
+    }
+    scheduleReminder()
+  }
+
+  function fireReminder(r, late) {
+    var text = r.text || service.tr("remindDefault")
+    service.speak("", "⏰ " + text + (late ? service.tr("remindLate") : ""), "", "reminder")
+    var name = pickAnim(norm.reminders.play)
+    if (name) service.playRequest("", name)
+    if (norm.reminders.notify) service.sendNotification(service.tr("remindTitle"), text, "approval")
+  }
+
+  // 精确到秒：定时器对准最近的一个提醒；15 秒调度兼顾挂起恢复
+  function scheduleReminder() {
+    if (!reminders.length) {
+      reminderTimer.stop()
+      return
+    }
+    reminderTimer.interval = Math.max(1000, Math.min(3600000, reminders[0].due - Date.now() + 200))
+    reminderTimer.restart()
+  }
+
+  function saveReminders() {
+    reminderFile.setText(JSON.stringify(reminders, null, 2))
+  }
+
+  Timer {
+    id: reminderTimer
+    onTriggered: auto.checkReminders()
+  }
+
+  // 列表放在 stateDir（0700）下；关机或挂起期间错过的提醒，启动后补报
+  FileView {
+    id: reminderFile
+    path: auto.service ? auto.service.stateDir + "/reminders.json" : ""
+    atomicWrites: true
+    printErrors: false
+    onLoaded: {
+      var list = []
+      try {
+        list = Reminders.sanitize(JSON.parse(text()))
+      } catch (e) {
+        console.warn("[agent-pet] reminders.json 解析失败，按空列表处理:", e)
+      }
+      auto.reminders = list
+      auto.remindersLoaded = true
+      auto.checkReminders()
+    }
+    onLoadFailed: {
+      auto.remindersLoaded = true
+    }
   }
 
   // ------------------------------------------------------------ 运行命令

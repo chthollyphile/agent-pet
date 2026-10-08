@@ -598,7 +598,7 @@ Item {
         if (pool.length && !pet.dragging) pet.play(Shared.pickSlot(pool[Math.floor(Math.random() * pool.length)], pet.anim), true)
         pet.showBubble(text, meme, 12000)
       } else {
-        pet.showBubble(text, "", kind === "error" ? 10000 : 8000)
+        pet.showBubble(text, "", kind === "error" ? 10000 : kind === "reminder" ? 30000 : 8000)
       }
     }
 

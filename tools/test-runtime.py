@@ -217,7 +217,7 @@ def inside(work):
         proc.wait(timeout=5)
         proc = None
         check_chat(work, env)
-        check_automation(work, env)
+        check_automation(work, env, calls)
     finally:
         if proc:
             proc.terminate()
@@ -306,7 +306,7 @@ ShellRoot {
             proc.wait(timeout=5)
 
 
-def check_automation(work, env):
+def check_automation(work, env, calls):
     """Tasks, rules and the chime through the production Service, observing speak/play signals."""
     probe = work / 'bin' / 'automation-probe'
     probe.write_text("""#!/usr/bin/python3
@@ -357,6 +357,31 @@ ShellRoot {
             {'name': 'broken', 'event': 'Stop', 'detail': '('},
         ],
     }}))
+    # Reminder chat: the mock CLI answers with structured reminder actions.
+    remind_mock = work / 'bin' / 'claude'
+    remind_mock.write_text("""#!/usr/bin/python3
+import json, os, sys
+args = sys.argv[1:]
+system = open(args[args.index("--system-prompt-file") + 1]).read()
+path = os.environ["TEST_REMIND_LOG"]
+with open(path, "a") as f: f.write(json.dumps({"system": system, "input": sys.stdin.read()}) + "\\n")
+n = len(open(path).read().splitlines())
+if n == 1:
+    print(json.dumps({"text": "好哒", "meme": "", "reminders": [
+        {"type": "add", "text": "喝水", "in_minutes": 0.05},
+        {"type": "add", "text": "x", "at": "2000-01-01 00:00"}]}))
+else:
+    print(json.dumps({"text": "给你看", "meme": "", "reminders": [{"type": "list"}]}))
+""")
+    remind_mock.chmod(0o755)
+    env = dict(env, TEST_REMIND_LOG=str(work / 'remind.jsonl'))
+    state_dir = Path.home() / '.local/state/agent-pet'
+    reminders_file = state_dir / 'reminders.json'
+    reminders_file.write_text(json.dumps([{'id': 'old', 'text': '旧提醒', 'due': int(time.time() * 1000) - 600000,
+                                           'repeat': 'none', 'h': 0, 'm': 0}]))
+    # An earlier check hid gi from python3; restore it so reminders use the D-Bus path
+    (work / 'bin' / 'python3').write_text('#!/bin/sh\nexec /usr/bin/python3 "$@"\n')
+    notified = len(calls)
     with (work / 'automation.log').open('w') as qlog:
         proc = subprocess.Popen(['qs', '-p', str(fixture), '--no-color'], env=env, stdout=qlog, stderr=qlog)
     try:
@@ -411,6 +436,25 @@ ShellRoot {
         wait_for(lambda: any(x['text'].endswith('点啦～') for x in spoken()), 'chime')
         assert '写代码' in json.loads(call('runtime-test', 'played'))
         print('PASS automation chime via IPC', flush=True)
+
+        # Missed while the shell was off: fired once on start, marked late
+        assert any(x['text'] == '⏰ 旧提醒（迟到了）' and x['kind'] == 'reminder' for x in spoken()), spoken()
+        assert call('agent-pet', 'chat', '3秒后提醒我喝水') == 'ok'
+        reply = wait_for(lambda: next((x for x in spoken() if x['text'].startswith('好哒')), None), 'reminder reply')
+        assert reply['text'].split('\n')[1].startswith('⏰ ') and reply['text'].endswith('喝水\n这个时间已经过了哦'), reply
+        assert json.loads(call('agent-pet', 'reminders'))[0]['text'] == '喝水'
+        assert json.loads(reminders_file.read_text())[0]['text'] == '喝水'
+        wait_for(lambda: any(x['text'] == '⏰ 喝水' and x['kind'] == 'reminder' for x in spoken()), 'reminder fired')
+        wait_for(lambda: json.loads(reminders_file.read_text()) == [], 'fired reminder removed')
+        wait_for(lambda: not state()['llmBusy'], 'chat idle')
+        assert call('agent-pet', 'chat', '我的提醒') == 'ok'
+        wait_for(lambda: any(x['text'] == '给你看\n现在没有提醒' for x in spoken()), 'list reply')
+        prompts = [json.loads(line) for line in (work / 'remind.jsonl').read_text().splitlines()]
+        assert '当前提醒：无' in prompts[0]['system'] and '"reminders"' in prompts[0]['system'], prompts[0]
+        reminder_calls = lambda: [(c[3], c[4]) for c in calls[notified:] if c[3] == '提醒']
+        wait_for(lambda: len(reminder_calls()) >= 2, 'reminder notifications')
+        assert reminder_calls() == [('提醒', '旧提醒'), ('提醒', '喝水')], calls[notified:]
+        print('PASS reminders: chat actions/validation/fire/notify/persist/late on start', flush=True)
         logs = (work / 'automation.log').read_text()
         for unexpected in ['ReferenceError', 'TypeError', 'is not a type', 'is not a function']:
             assert unexpected not in logs, logs

@@ -35,6 +35,8 @@ test('normalize: 默认值与无效条目', () => {
 test('normalize: 空配置', () => {
   const n = A.normalize(undefined);
   assert.equal(n.chime.enabled, false);
+  assert.deepEqual(n.reminders, { enabled: true, play: ['点击回应-元气挥手'], notify: true });
+  assert.deepEqual(A.normalize({ reminders: { enabled: false, play: [] } }).reminders, { enabled: false, play: [], notify: true });
   assert.deepEqual(n.tasks, []);
   assert.deepEqual(n.rules, []);
   assert.deepEqual(n.errors, []);

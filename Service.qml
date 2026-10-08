@@ -5,6 +5,7 @@ import "lib/jsonc.mjs" as Jsonc
 import "lib/work-status.mjs" as WS
 import "lib/usage.mjs" as Usage
 import "lib/i18n.mjs" as I18n
+import "lib/reminders.mjs" as Reminders
 
 // agent-pet 的状态中枢：配置、Claude Code / Codex 工作状态聚合、用量、LLM、通知、IPC。
 // 每块有宠物的屏幕各一个 PetOverlay（全屏透明 layer-shell 窗口）。
@@ -207,6 +208,23 @@ Scope {
       summary: agentName + (project ? " · " + project : "") + " · " + title,
       body: entry.message || entry.tool || "",
       fixedSummary: agentName + " · " + title
+    }
+    if (!notifyViaDbus) {
+      notifyFixed(n)
+      return
+    }
+    notifyQueue = notifyQueue.concat([n])
+    nextNotify()
+  }
+
+  // 通用通知（提醒等）：正文走 stdin；退回 notify-send 时只发 "agent-pet · 标题"
+  function sendNotification(title, body, icon) {
+    var n = {
+      app: "agent-pet",
+      icon: root.pluginDir + "/assets/pic/notify-" + icon + ".png",
+      summary: title,
+      body: body,
+      fixedSummary: "agent-pet · " + title
     }
     if (!notifyViaDbus) {
       notifyFixed(n)
@@ -428,12 +446,16 @@ Scope {
     lang: root.lang
     home: root.home
     stateDir: root.stateDir
-    onFinished: function(petId, kind, text, meme, failed) {
+    onFinished: function(petId, kind, text, meme, failed, extra) {
       if (failed) {
         root.speak(petId, text, "", "error")
         return
       }
-      if (kind === "chat") root.rememberChat(petId, llm.lastUserText, text)
+      if (kind === "chat") {
+        root.rememberChat(petId, llm.lastUserText, text)
+        // 回复里附带的提醒指令：本地校验执行，实际排定的时间附在回复后面
+        if (automation.remindersEnabled && extra && extra.reminders) text = automation.applyReminderActions(text, extra.reminders)
+      }
       root.speak(petId, text, root.knownMeme(meme), kind)
     }
   }
@@ -603,15 +625,21 @@ Scope {
     var sep = lang === "en" ? " " : ""
     var system = persona(pet) + sep + tr("chatIntro")
     var useMemes = config.chatImageEnabled !== false && memeNames().length > 0
-    if (useMemes) {
-      var limit = Number(config.chatImageLimit)
-      var names = memeNames()
-      if (limit > 0) names = names.slice(0, limit)
-      system += sep + tr("chatJson") + sep
-        + tr("chatMemes", { list: names.map(function(n) { return n + (lang === "en" ? ": " : "：") + config.memes[n] }).join(lang === "en" ? "; " : "；") })
+    // 能设提醒时回复必须是 JSON（reminders 字段放在里面）
+    var useReminders = automation.remindersEnabled
+    if (useMemes || useReminders) {
+      system += sep + tr("chatJson")
+      if (useMemes) {
+        var limit = Number(config.chatImageLimit)
+        var names = memeNames()
+        if (limit > 0) names = names.slice(0, limit)
+        system += sep
+          + tr("chatMemes", { list: names.map(function(n) { return n + (lang === "en" ? ": " : "：") + config.memes[n] }).join(lang === "en" ? "; " : "；") })
+      }
     } else {
       system += sep + tr("chatPlain")
     }
+    if (useReminders) system += sep + tr("remindSystem", Reminders.promptVars(automation.reminders, Date.now(), lang))
     var rounds = Number(config.chatMemoryRounds)
     if (!(rounds >= 0)) rounds = 5
     var history = chatHistory(pet.id).slice(-rounds)
@@ -715,6 +743,11 @@ Scope {
     function task(name: string): string {
       return automation.runTask(name, true)
     }
+    function reminders(): string {
+      return JSON.stringify(automation.reminders.map(function(r) {
+        return { text: r.text, when: Reminders.formatWhen(r, Date.now(), root.lang), repeat: r.repeat, due: new Date(r.due).toISOString() }
+      }))
+    }
     function toggle(): string {
       root.hidden = !root.hidden
       return root.hidden ? "hidden" : "shown"
@@ -745,7 +778,8 @@ Scope {
           tasks: automation.norm.tasks.map(function(t) { return t.key }),
           rules: automation.norm.rules.map(function(r) { return r.key }),
           errors: automation.norm.errors,
-          running: Object.keys(automation.taskRunning)
+          running: Object.keys(automation.taskRunning),
+          reminders: automation.remindersEnabled ? automation.reminders.length : -1
         }
       })
     }
