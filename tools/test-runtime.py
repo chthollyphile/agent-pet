@@ -265,6 +265,10 @@ ShellRoot {
       input.reload()
       return service.requestChat("", JSON.parse(input.text()).text)
     }
+    function webchat(): string {
+      input.reload()
+      return service.requestChat("", JSON.parse(input.text()).text, true)
+    }
   }
 }
 ''')
@@ -301,6 +305,23 @@ ShellRoot {
                 assert 'PRIVATE-SYSTEM-SENTINEL' in records[1]['input']
                 assert '--ignore-user-config' in records[1]['argv']
             print('PASS ' + provider + ' chat: current message/history/system prompt absent from argv', flush=True)
+
+            # Web chat: only web tools opened, no chat history in the request
+            (work / 'chat-input.json').write_text(json.dumps({'text': 'PRIVATE-WEB-SENTINEL'}))
+            result = run(['qs', 'ipc', '--pid', str(proc.pid), 'call', 'runtime-test', 'webchat'], env=env)
+            assert result.returncode == 0 and result.stdout.strip() == 'ok', result
+            wait_for(lambda: not state()['llmBusy'], 'mock web CLI finished')
+            web = json.loads(chatlog.read_text().splitlines()[-1])
+            assert 'PRIVATE-' not in json.dumps(web['argv']), web
+            assert 'PRIVATE-WEB-SENTINEL' in web['input']
+            assert 'PRIVATE-FIRST-SENTINEL' not in web['input'] and 'PRIVATE-REPLY-SENTINEL' not in web['input'], web
+            if provider == 'claude':
+                i = web['argv'].index('--tools')
+                assert web['argv'][i + 1] == 'WebSearch,WebFetch' and 'WebSearch,WebFetch' in web['argv'][i + 2:i + 4], web
+                assert records[1]['argv'][records[1]['argv'].index('--tools') + 1] == ''
+            else:
+                assert 'web_search="live"' in web['argv'] and 'web_search="disabled"' in records[1]['argv'], web
+            print('PASS ' + provider + ' web chat: web tools only, no history', flush=True)
         finally:
             proc.terminate()
             proc.wait(timeout=5)
@@ -371,7 +392,8 @@ if n == 1:
         {"type": "add", "text": "喝水", "in_minutes": 0.05},
         {"type": "add", "text": "x", "at": "2000-01-01 00:00"}]}))
 else:
-    print(json.dumps({"text": "给你看", "meme": "", "reminders": [{"type": "list"}]}))
+    # Raw newline inside the JSON string, as models sometimes emit for multi-paragraph replies
+    print('{"text": "给你看' + chr(10) + '第二段", "meme": "", "reminders": [{"type": "list"}]}')
 """)
     remind_mock.chmod(0o755)
     env = dict(env, TEST_REMIND_LOG=str(work / 'remind.jsonl'))
@@ -448,7 +470,7 @@ else:
         wait_for(lambda: json.loads(reminders_file.read_text()) == [], 'fired reminder removed')
         wait_for(lambda: not state()['llmBusy'], 'chat idle')
         assert call('agent-pet', 'chat', '我的提醒') == 'ok'
-        wait_for(lambda: any(x['text'] == '给你看\n现在没有提醒' for x in spoken()), 'list reply')
+        wait_for(lambda: any(x['text'] == '给你看\n第二段\n现在没有提醒' for x in spoken()), 'list reply (raw newline JSON)')
         prompts = [json.loads(line) for line in (work / 'remind.jsonl').read_text().splitlines()]
         assert '当前提醒：无' in prompts[0]['system'] and '"reminders"' in prompts[0]['system'], prompts[0]
         reminder_calls = lambda: [(c[3], c[4]) for c in calls[notified:] if c[3] == '提醒']

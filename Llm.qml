@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import "lib/i18n.mjs" as I18n
+import "lib/segments.mjs" as Seg
 
 // 无头调用 claude -p / codex exec 生成一句话。一次只跑一个请求。
 // AGENT_PET_INTERNAL=1：agent-pet-hook 看到它直接退出，宠物自己的调用不会回灌成工作状态事件。
@@ -29,7 +30,8 @@ Scope {
   signal finished(string petId, string kind, string text, string meme, bool failed, var extra)
 
   // cheap = 自动任务：Codex 额外压低推理强度
-  function run(provider, model, systemPrompt, prompt, petId, kind, meme, cheap) {
+  // web = 联网对话：只多开放联网搜索 / 抓取网页，其他工具照旧关闭；联网慢，超时放宽到 180 秒
+  function run(provider, model, systemPrompt, prompt, petId, kind, meme, cheap, web) {
     if (proc.running) return false
     var cmd
     if (provider === "codex") {
@@ -47,7 +49,8 @@ Scope {
         "--disable", "multi_agent", "--disable", "view_image",
         "--disable", "browser_use", "--disable", "computer_use", "--disable", "image_generation",
         "--disable", "hooks",
-        "-c", "web_search=\"disabled\"",
+        // 联网搜索只在联网对话时打开
+        "-c", web ? "web_search=\"live\"" : "web_search=\"disabled\"",
         "--color", "never"]
       if (model) cmd.push("-m", model)
       if (cheap) cmd.push("-c", "model_reasoning_effort=\"low\"")
@@ -56,14 +59,16 @@ Scope {
       systemFile.setText(systemPrompt)
       // 不给 prompt 参数时 claude -p 从 stdin 读
       proc.input = prompt
+      // 联网时只给 WebSearch / WebFetch，并预先放行（-p 模式没人能点批准）
       cmd = ["claude", "-p",
-        "--system-prompt-file", systemFile.path,
-        "--tools", "",
+        "--system-prompt-file", systemFile.path].concat(web
+          ? ["--tools", "WebSearch,WebFetch", "--allowedTools", "WebSearch,WebFetch"]
+          : ["--tools", ""]).concat([
         "--setting-sources", "",
         "--strict-mcp-config",
         "--disable-slash-commands",
         "--no-session-persistence",
-        "--output-format", "text"]
+        "--output-format", "text"])
       if (model) cmd.push("--model", model)
     }
     llm.petId = petId
@@ -73,6 +78,7 @@ Scope {
     proc.command = cmd
     proc.stdinEnabled = true
     proc.running = true
+    timeout.interval = web ? 180000 : 90000
     timeout.restart()
     return true
   }
@@ -82,10 +88,16 @@ Scope {
     var text = String(raw || "").trim()
     var m = text.match(/\{[\s\S]*\}/)
     if (m) {
+      var obj = null
       try {
-        var obj = JSON.parse(m[0])
-        if (obj && typeof obj.text === "string") return { text: obj.text.trim(), meme: String(obj.meme || ""), extra: obj }
-      } catch (e) {}
+        obj = JSON.parse(m[0])
+      } catch (e) {
+        // 分段回复时模型有时在字符串里直接换行，转义后再试一次
+        try {
+          obj = JSON.parse(Seg.escapeNewlinesInStrings(m[0]))
+        } catch (e2) {}
+      }
+      if (obj && typeof obj.text === "string") return { text: obj.text.trim(), meme: String(obj.meme || ""), extra: obj }
     }
     return { text: text.replace(/^["“]|["”]$/g, ""), meme: "", extra: {} }
   }

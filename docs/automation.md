@@ -1,4 +1,4 @@
-# 自动化（`local/automation` 分支，仅本地使用）
+# 本地功能：自动化、提醒、联网对话（`local/automation` 分支，仅本地使用）
 
 在 `~/.config/agent-pet/config.jsonc` 里写 `automations`，保存即生效。它和其他顶层字段一样**整段替换**默认值，所以 `chime`、`tasks`、`rules` 用到哪个写哪个，没写的视为关闭或为空。
 
@@ -80,6 +80,23 @@ Codex 只发 `UserPromptSubmit`、`PreToolUse`、`PostToolUse`、`PermissionRequ
 - 聊天时，当前时间和现有提醒列表会附在发给模型的系统提示里。
 - 没有图形界面时也可以用命令行：`omarchy-shell agent-pet chat "10分钟后提醒我喝水"`。注意这句话会出现在进程参数里。`omarchy-shell agent-pet reminders` 以 JSON 列出现有提醒。
 
+## 联网对话（右键菜单 →「联网对话」）
+
+用同一个聊天框，但这次模型可以上网搜索、打开网页，适合问最新版本、新闻、文档这类问题。不想要这个菜单项，就在配置里写 `"webChat": false`。
+
+- **只多开放联网**：Claude 只给 `WebSearch` 和 `WebFetch`，并预先放行，因为 `-p` 模式没人能点批准；Codex 只把 `web_search` 改成 `live`。其他工具照旧全部关闭。
+- **防网页注入**：网页内容可能夹带指令。所以联网时**不带对话记忆、表情包和提醒功能**，模型能看到、也就可能被诱导发出去的，只有你这一句问题。联网回复里即使带了提醒指令也不会执行。联网对话的问答仍会记进对话记忆，之后的普通聊天能接着聊。
+- 比普通聊天慢，实测 15–30 秒；超时上限是 180 秒。
+- 命令行：`omarchy-shell agent-pet webchat "问题"`（这句话会出现在进程参数里）。
+
+## 分段气泡
+
+聊天、联网对话和碎碎念的长回复，会拆成多个气泡依次显示，右下角带页码（如 `1/3`）。
+
+- 模型被要求分几段说、段间换行。本地再兜底：太长的段按句子切，句子还太长按逗号切；太短的段并进相邻段。所以模型不守规矩时也能正常分段。
+- 每个气泡最多 50 字（英文 120 个字符），按字数停留 4–15 秒，最后一段多留 4 秒。新消息来了会打断剩下的段。
+- 模型偶尔会在 JSON 字符串里直接换行（没写成 `\n`），解析时会自动修复。
+
 ## 示例
 
 ```jsonc
@@ -129,4 +146,4 @@ qs ipc -p <插件目录> call agent-pet state        # automations 字段：已�
 
 - 调度每 15 秒按系统时间检查一次。电脑挂起期间错过的整点和 `at` 时间点，恢复后超过 2 分钟的不会补报。
 - 这个分支不能发布到插件市场：`tools/export-omarchy.sh` 遇到含 `Automation.qml` 的提交会拒绝导出，发布请用 `--ref main`。
-- 测试：`node --test tools/test-automation.mjs tools/test-reminders.mjs`（纯逻辑），`python3 tools/test-runtime.py`（含自动化集成测试）。
+- 测试：`node --test tools/test-automation.mjs tools/test-reminders.mjs tools/test-segments.mjs`（纯逻辑），`python3 tools/test-runtime.py`（含自动化集成测试）。

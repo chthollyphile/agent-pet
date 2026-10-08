@@ -327,6 +327,7 @@
     "size": 14
   },
   "layer": "top",
+  "webChat": true,
   "automations": {
     "chime": {
       "enabled": false,

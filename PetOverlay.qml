@@ -85,8 +85,8 @@ PanelWindow {
     menu.show(pet, px, py)
   }
 
-  function openChat(pet) {
-    chat.show(pet)
+  function openChat(pet, web) {
+    chat.show(pet, web)
   }
 
   PetMenu {

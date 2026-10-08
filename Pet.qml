@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import "lib/shared.mjs" as Shared
 import "lib/work-status.mjs" as WS
+import "lib/segments.mjs" as Seg
 
 // 一只宠物。坐标语义与 dsh-pet 一致：(x, y) = 16:9 动画盒的左上角，盒宽 size；
 // 画面下移 bottomPad 让脚底贴住盒底，所以盒底 = 地面。
@@ -485,8 +486,8 @@ Item {
       else if (r === "ok") showBubble(service.tr("whisperThinking"), "", 0)
       return
     }
-    if (leaf.action === "chat") {
-      overlay.openChat(pet)
+    if (leaf.action === "chat" || leaf.action === "webchat") {
+      overlay.openChat(pet, leaf.action === "webchat")
       return
     }
     if (leaf.action === "usage") {
@@ -543,15 +544,43 @@ Item {
   property var tempBubble: null
 
   function showBubble(text, meme, ms) {
+    // 新气泡打断还没放完的分段
+    bubbleQueue = []
     tempBubble = { text: text, meme: meme || "" }
     if (ms > 0) bubbleTimer.interval = ms
     if (ms > 0) bubbleTimer.restart()
     else bubbleTimer.stop()
   }
 
+  // 长回复分段：一段一个气泡，按字数停留后自动换下一段；表情包跟第一段
+  property var bubbleQueue: []
+
+  function showSegments(text, meme) {
+    var segs = Seg.split(text, service.lang)
+    if (segs.length <= 1) {
+      showBubble(text, meme, Seg.duration(text, service.lang, true))
+      return
+    }
+    bubbleQueue = segs.map(function(s, i) {
+      return { text: s, meme: i === 0 ? meme || "" : "", page: (i + 1) + "/" + segs.length }
+    })
+    nextSegment()
+  }
+
+  function nextSegment() {
+    var item = bubbleQueue[0]
+    bubbleQueue = bubbleQueue.slice(1)
+    tempBubble = item
+    bubbleTimer.interval = Seg.duration(item.text, service.lang, bubbleQueue.length === 0)
+    bubbleTimer.restart()
+  }
+
   Timer {
     id: bubbleTimer
-    onTriggered: pet.tempBubble = null
+    onTriggered: {
+      if (pet.bubbleQueue.length) pet.nextSegment()
+      else pet.tempBubble = null
+    }
   }
 
   Timer {
@@ -593,10 +622,10 @@ Item {
 
     function onSpeak(petId, text, meme, kind) {
       if (petId !== "" && petId !== pet.cfg.id) return
-      if (kind === "whisper" || kind === "chat") {
+      if (kind === "whisper" || kind === "chat" || kind === "webchat") {
         var pool = (pet.anims.events || {}).whisper || []
         if (pool.length && !pet.dragging) pet.play(Shared.pickSlot(pool[Math.floor(Math.random() * pool.length)], pet.anim), true)
-        pet.showBubble(text, meme, 12000)
+        pet.showSegments(text, meme)
       } else {
         pet.showBubble(text, "", kind === "error" ? 10000 : kind === "reminder" ? 30000 : 8000)
       }

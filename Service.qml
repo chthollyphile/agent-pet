@@ -451,11 +451,9 @@ Scope {
         root.speak(petId, text, "", "error")
         return
       }
-      if (kind === "chat") {
-        root.rememberChat(petId, llm.lastUserText, text)
-        // 回复里附带的提醒指令：本地校验执行，实际排定的时间附在回复后面
-        if (automation.remindersEnabled && extra && extra.reminders) text = automation.applyReminderActions(text, extra.reminders)
-      }
+      if (kind === "chat" || kind === "webchat") root.rememberChat(petId, llm.lastUserText, text)
+      // 回复里附带的提醒指令：本地校验执行，实际排定的时间附在回复后面。联网回复不执行（可能来自网页注入）
+      if (kind === "chat" && automation.remindersEnabled && extra && extra.reminders) text = automation.applyReminderActions(text, extra.reminders)
       root.speak(petId, text, root.knownMeme(meme), kind)
     }
   }
@@ -618,15 +616,18 @@ Scope {
     return "ok"
   }
 
-  function requestChat(petId, text) {
+  // web = 联网对话：只多开放联网搜索 / 抓取网页。网页内容可能夹带指令，所以联网时
+  // 不带对话记忆、表情包和提醒功能，模型能接触到（也就可能被诱导发出去）的只有这一句问题
+  function requestChat(petId, text, web) {
     var pet = petById(petId)
     if (!pet || !text) return "no-pet"
+    if (web && config.webChat === false) return "disabled"
     if (llm.busy) return "busy"
     var sep = lang === "en" ? " " : ""
-    var system = persona(pet) + sep + tr("chatIntro")
-    var useMemes = config.chatImageEnabled !== false && memeNames().length > 0
+    var system = persona(pet) + sep + tr(web ? "chatIntroWeb" : "chatIntro")
+    var useMemes = !web && config.chatImageEnabled !== false && memeNames().length > 0
     // 能设提醒时回复必须是 JSON（reminders 字段放在里面）
-    var useReminders = automation.remindersEnabled
+    var useReminders = !web && automation.remindersEnabled
     if (useMemes || useReminders) {
       system += sep + tr("chatJson")
       if (useMemes) {
@@ -642,11 +643,11 @@ Scope {
     if (useReminders) system += sep + tr("remindSystem", Reminders.promptVars(automation.reminders, Date.now(), lang))
     var rounds = Number(config.chatMemoryRounds)
     if (!(rounds >= 0)) rounds = 5
-    var history = chatHistory(pet.id).slice(-rounds)
+    var history = web ? [] : chatHistory(pet.id).slice(-rounds)
     var prompt = history.map(function(h) { return tr("chatOwner") + h.q + "\n" + tr("chatYou") + h.a }).join("\n")
     prompt += (prompt ? "\n" : "") + tr("chatOwner") + text
     llm.lastUserText = text
-    llm.run((config.llm || {}).provider, llmModel(), system, prompt, pet.id, "chat", "", false)
+    llm.run((config.llm || {}).provider, llmModel(), system, prompt, pet.id, web ? "webchat" : "chat", "", false, web === true)
     return "ok"
   }
 
@@ -731,6 +732,9 @@ Scope {
     }
     function chat(text: string): string {
       return root.requestChat("", text)
+    }
+    function webchat(text: string): string {
+      return root.requestChat("", text, true)
     }
     function reload(): string {
       root.reloadConfig()

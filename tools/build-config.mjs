@@ -46,6 +46,8 @@ Object.assign(cfg, {
   bubbleFont: { family: '', file: '', size: 14 },
   // 宠物所在的 layer-shell 层：top（普通窗口之上、全屏应用之下）或 overlay（永远置顶）
   layer: 'top',
+  // 右键菜单「联网对话」：只给模型开放联网搜索 / 抓取网页，不带对话记忆
+  webChat: true,
   // 自动化（见 lib/automation.mjs）：chime = 整点报时（默认关）；tasks = 定时任务；rules = hook 事件触发规则
   automations: { chime: { enabled: false, from: 8, to: 23 }, tasks: [], rules: [] },
 });

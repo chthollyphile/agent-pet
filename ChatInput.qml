@@ -9,6 +9,8 @@ Rectangle {
   property var service
   property var pet: null
   property bool open: false
+  // 联网对话：同一个输入框，换提示文字，请求时开放联网搜索
+  property bool web: false
   property real areaWidth: 0
   property real areaHeight: 0
 
@@ -20,8 +22,9 @@ Rectangle {
   border.color: Color.popups.border
   border.width: 1
 
-  function show(targetPet) {
+  function show(targetPet, webMode) {
     pet = targetPet
+    web = webMode === true
     // 身体命中框右上角旁边，超出屏幕就夹回
     var px = targetPet.x + targetPet.hitX + targetPet.hitW + 6
     var py = targetPet.y + targetPet.hitY + 6
@@ -51,7 +54,7 @@ Rectangle {
     Text {
       anchors.verticalCenter: parent.verticalCenter
       visible: input.text === ""
-      text: chat.service ? chat.service.tr(chat.service.llmBusy ? "chatBusy" : "chatPlaceholder") : ""
+      text: chat.service ? chat.service.tr(chat.service.llmBusy ? "chatBusy" : chat.web ? "webChatPlaceholder" : "chatPlaceholder") : ""
       color: Color.muted
       font: input.font
     }
@@ -63,9 +66,9 @@ Rectangle {
     function send() {
       var text = input.text.trim()
       if (!text || !chat.pet) return
-      var r = chat.service.requestChat(chat.pet.cfg.id, text)
+      var r = chat.service.requestChat(chat.pet.cfg.id, text, chat.web)
       if (r === "busy") return
-      chat.pet.showBubble("……", "", 0)
+      chat.pet.showBubble(chat.web ? chat.service.tr("webChatSearching") : "……", "", 0)
       chat.close()
     }
   }

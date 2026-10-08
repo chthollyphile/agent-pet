@@ -5,7 +5,7 @@ import QtQuick
 Item {
   id: bubble
 
-  property var content: null // { text, meme }
+  property var content: null // { text, meme, page }：page = 分段气泡的页码，如 "1/3"
   property url memeDir
   // 字体：fontFile（字体文件路径）> fontFamily（已安装字体名）> sans-serif
   property string fontFamily: ""
@@ -65,6 +65,20 @@ Item {
         lineHeight: 1.25
         wrapMode: Text.Wrap
         width: Math.min(implicitWidth, bubble.maxTextWidth)
+      }
+
+      // 分段页码：右下角小字
+      Text {
+        id: page
+        readonly property string value: bubble.shownContent && bubble.shownContent.page ? bubble.shownContent.page : ""
+        visible: value !== ""
+        text: value
+        textFormat: Text.PlainText
+        color: "#8a8a8a"
+        font.family: bubble.resolvedFamily
+        font.pixelSize: Math.max(9, bubble.fontSize - 3)
+        width: label.width
+        horizontalAlignment: Text.AlignRight
       }
 
       Image {
