@@ -1,6 +1,6 @@
 import QtQuick
 
-// 头顶气泡：白底圆角 + 小尾巴，可带一张表情包。不接收输入（不在 overlay 的 mask 里）。
+// 头顶气泡：白底圆角 + 小尾巴，可带一张表情包。显示时可点击（Pet 把它加进 overlay 的输入区域）。
 // 样式取自 dsh-pet 的 bubble.ts（白 92%、#2b2b2b）。
 Item {
   id: bubble
@@ -13,6 +13,8 @@ Item {
   property int fontSize: 14
   property real tailX: width / 2
   property real maxTextWidth: 240
+
+  signal clicked()
 
   // 淡出期间保留最后一份内容，避免先清空再消失
   property var shownContent: null
@@ -93,6 +95,13 @@ Item {
         asynchronous: true
       }
     }
+  }
+
+  MouseArea {
+    anchors.fill: parent
+    enabled: bubble.active
+    cursorShape: Qt.PointingHandCursor
+    onClicked: bubble.clicked()
   }
 
   Rectangle {

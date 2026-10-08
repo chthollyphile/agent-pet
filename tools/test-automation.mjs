@@ -119,3 +119,30 @@ test('tick: at 任务每天每个时间点一次', () => {
   assert.deepEqual(A.tick(st, norm, at(18, 0)).tasks, ['b']);
   assert.deepEqual(A.tick(st, norm, at(9, 30, 10)).tasks, ['b']);
 });
+
+test('normalize: focus 默认值', () => {
+  assert.deepEqual(A.normalize(undefined).focus, { minutes: 25, breakMinutes: 5, anims: A.DEFAULT_FOCUS_ANIMS, notify: true });
+  const f = A.normalize({ focus: { minutes: 50, breakMinutes: 0, anims: '写代码', notify: false } }).focus;
+  assert.deepEqual(f, { minutes: 50, breakMinutes: 0, anims: ['写代码'], notify: false });
+  assert.equal(A.normalize({ focus: { minutes: -1 } }).focus.minutes, 25);
+});
+
+test('focusStep: 专注 → 休息 → 结束', () => {
+  const t0 = at(10, 0);
+  let r = A.focusStep({ focusUntil: t0 + 60000, breakUntil: 0 }, t0, 5);
+  assert.equal(r.event, '');
+  r = A.focusStep(r.state, t0 + 60000, 5);
+  assert.equal(r.event, 'focusEnd');
+  assert.equal(r.late, false);
+  assert.deepEqual(r.state, { focusUntil: 0, breakUntil: t0 + 60000 + 300000 });
+  r = A.focusStep(r.state, t0 + 360000, 5);
+  assert.equal(r.event, 'breakEnd');
+  assert.deepEqual(r.state, { focusUntil: 0, breakUntil: 0 });
+  // 不休息
+  assert.deepEqual(A.focusStep({ focusUntil: t0 }, t0, 0).state, { focusUntil: 0, breakUntil: 0 });
+  // 挂起很久后：标记 late，休息从现在算
+  r = A.focusStep({ focusUntil: t0 }, t0 + 3600000, 5);
+  assert.equal(r.late, true);
+  assert.equal(r.state.breakUntil, t0 + 3600000 + 300000);
+  assert.equal(A.focusStep(undefined, t0, 5).event, '');
+});

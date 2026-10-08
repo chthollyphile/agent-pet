@@ -3,7 +3,7 @@ import Quickshell
 import Quickshell.Wayland
 
 // 一块屏一个全屏透明 layer-shell 窗口，宠物在窗口内自由移动 / 被甩飞。
-// 输入区域（mask）只包含宠物身体和对话框，其余位置点击穿透到下面的窗口；
+// 输入区域（mask）只包含宠物身体、显示中的气泡和对话框，其余位置点击穿透到下面的窗口；
 // 右键菜单打开期间整个窗口接收输入，点空白处关闭菜单。
 PanelWindow {
   id: win
@@ -40,7 +40,10 @@ PanelWindow {
     var out = []
     for (var i = 0; i < petRepeater.count; i++) {
       var item = petRepeater.itemAt(i)
-      if (item) out.push(item.hitRegion)
+      if (item) {
+        out.push(item.hitRegion)
+        out.push(item.bubbleRegion)
+      }
     }
     out.push(chatRegion)
     petRegions = out

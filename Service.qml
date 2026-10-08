@@ -207,7 +207,10 @@ Scope {
       icon: root.pluginDir + "/assets/pic/notify-" + notifyIcons[entry.state] + ".png",
       summary: agentName + (project ? " · " + project : "") + " · " + title,
       body: entry.message || entry.tool || "",
-      fixedSummary: agentName + " · " + title
+      fixedSummary: agentName + " · " + title,
+      // 点通知跳回发事件的终端（bin/agent-pet-notify 在通知服务支持 actions 时加默认动作）
+      focus: entry.window || "",
+      actionLabel: tr("notifyJump")
     }
     if (!notifyViaDbus) {
       notifyFixed(n)
@@ -215,6 +218,17 @@ Scope {
     }
     notifyQueue = notifyQueue.concat([n])
     nextNotify()
+  }
+
+  // 跳回会话所在的终端窗口（地址由 hook 沿父进程链查出；tmux / ssh 里的会话没有）
+  function jumpToSession(entry) {
+    var w = entry ? entry.window || "" : ""
+    if (!/^0x[0-9a-f]+$/.test(w)) {
+      speak("", tr("jumpNoWindow"), "", "info")
+      return false
+    }
+    Quickshell.execDetached(["hyprctl", "dispatch", "focuswindow", "address:" + w])
+    return true
   }
 
   // 通用通知（提醒等）：正文走 stdin；退回 notify-send 时只发 "agent-pet · 标题"
@@ -657,8 +671,8 @@ Scope {
     running: root.ready && root.config.whisperAuto === true
     repeat: true
     onTriggered: {
-      // 有 agent 正在干活时不打扰，也不和它抢额度
-      if (WS.anyBusy(root.wsStore)) return
+      // 有 agent 正在干活时不打扰，也不和它抢额度；专注期间也不说
+      if (WS.anyBusy(root.wsStore) || automation.focusActive) return
       for (var i = 0; i < root.pets.length; i++) {
         if (root.pets[i].whisperEnabled !== false) {
           root.requestWhisper(root.pets[i].id, true)
@@ -705,10 +719,26 @@ Scope {
     }
   }
 
-  // ------------------------------------------------------------ 自动化：整点报时、定时任务、事件规则
+  // ------------------------------------------------------------ 自动化：整点报时、定时任务、事件规则、提醒、专注
   Automation {
     id: automation
     service: root
+  }
+
+  readonly property bool focusActive: automation.focusActive
+  readonly property var focusAnims: automation.norm.focus.anims
+
+  function startFocus(minutes) {
+    return automation.startFocus(minutes)
+  }
+
+  function stopFocus() {
+    return automation.stopFocus()
+  }
+
+  function focusMenuLabel() {
+    return focusActive ? tr("menuFocusStop", { left: automation.focusLeftMinutes() })
+      : tr("menuFocus", { min: automation.norm.focus.minutes })
   }
 
   // ------------------------------------------------------------ IPC：omarchy-shell agent-pet <method> [arg]
@@ -747,6 +777,17 @@ Scope {
     function task(name: string): string {
       return automation.runTask(name, true)
     }
+    // 跳到当前显示的会话所在的终端（可以绑到快捷键）
+    function jump(): string {
+      if (!root.workStatus) return "no-session"
+      return root.jumpToSession(root.workStatus) ? "ok" : "no-window"
+    }
+    function focus(minutes: string): string {
+      return automation.startFocus(minutes)
+    }
+    function focusStop(): string {
+      return automation.stopFocus()
+    }
     function reminders(): string {
       return JSON.stringify(automation.reminders.map(function(r) {
         return { text: r.text, when: Reminders.formatWhen(r, Date.now(), root.lang), repeat: r.repeat, due: new Date(r.due).toISOString() }
@@ -783,7 +824,8 @@ Scope {
           rules: automation.norm.rules.map(function(r) { return r.key }),
           errors: automation.norm.errors,
           running: Object.keys(automation.taskRunning),
-          reminders: automation.remindersEnabled ? automation.reminders.length : -1
+          reminders: automation.remindersEnabled ? automation.reminders.length : -1,
+          focus: { active: automation.focusActive, leftMinutes: automation.focusLeftMinutes(), breakUntil: automation.breakUntil }
         }
       })
     }

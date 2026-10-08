@@ -30,6 +30,7 @@ Item {
     if (targetPet.cfg.whisperEnabled !== false) tools.push({ label: service.tr(service.llmBusy ? "menuWhisperBusy" : "menuWhisper"), action: "whisper" })
     tools.push({ label: service.tr("menuChat"), action: "chat" })
     if (service.config.webChat !== false) tools.push({ label: service.tr("menuWebChat"), action: "webchat" })
+    tools.push({ label: service.focusMenuLabel(), action: service.focusActive ? "focusStop" : "focus" })
     if (targetPet.cfg.balanceEnabled !== false) tools.push({ label: service.tr("menuUsage"), action: "usage" })
     tools.push({ label: service.tr("menuHome"), action: "home" })
     tools.push({ label: service.tr("menuReload"), action: "reload" })

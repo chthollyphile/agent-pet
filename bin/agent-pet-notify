@@ -7,7 +7,13 @@ standard input and calls org.freedesktop.Notifications.Notify directly
 through PyGObject, so the project name and message never appear in process
 arguments:
 
-  {"app": "agent-pet", "icon": "/path/to/icon.png", "summary": "...", "body": "..."}
+  {"app": "agent-pet", "icon": "/path/to/icon.png", "summary": "...", "body": "...",
+   "focus": "0x...", "actionLabel": "..."}
+
+With "focus" (a Hyprland window address) and a server that supports actions,
+the notification gets a default action; clicking it focuses that window. The
+waiting is done by a child in its own session, so this process still exits as
+soon as the notification is sent and the caller's queue is not held up.
 
 Exit status: 0 sent; 1 the D-Bus call failed; 2 bad input; 3 PyGObject (gi)
 is not available, so the caller falls back to notify-send with fixed text.
@@ -16,6 +22,9 @@ is not available, so the caller falls back to notify-send with fixed text.
 from __future__ import annotations
 
 import json
+import os
+import re
+import subprocess
 import sys
 
 try:
@@ -29,6 +38,9 @@ except (ImportError, ValueError):
 BUS_NAME = "org.freedesktop.Notifications"
 OBJECT_PATH = "/org/freedesktop/Notifications"
 INTERFACE = "org.freedesktop.Notifications"
+WINDOW = re.compile(r"^0x[0-9a-f]+$")
+# How long the child waits for a click before giving up
+WAIT_SECONDS = 3600
 
 
 def call(bus: Gio.DBusConnection, method: str, params: GLib.Variant | None, reply: str) -> tuple:
@@ -38,7 +50,41 @@ def call(bus: Gio.DBusConnection, method: str, params: GLib.Variant | None, repl
   return result.unpack()
 
 
+def spawn_waiter(data: dict) -> int:
+  """Send from a child in a new session that stays to wait for the click; return its send result."""
+  child = subprocess.Popen(
+    [sys.executable, os.path.abspath(__file__), "--wait"],
+    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, start_new_session=True,
+  )
+  child.stdin.write(json.dumps(data).encode())
+  child.stdin.close()
+  line = child.stdout.readline().decode().strip()
+  child.stdout.close()
+  return 0 if line == "sent" else int(line) if line.isdigit() else 1
+
+
+def subscribe_click(bus: Gio.DBusConnection, window: str) -> tuple:
+  """Subscribe before sending, so a quick click is not missed; set state["nid"] after Notify returns."""
+  loop = GLib.MainLoop()
+  state = {"nid": None}
+
+  def on_signal(conn, sender, path, iface, signal, params):
+    values = params.unpack()
+    if state["nid"] is None or values[0] != state["nid"]:
+      return
+    if signal == "ActionInvoked" and values[1] == "default":
+      subprocess.run(["hyprctl", "dispatch", "focuswindow", "address:" + window],
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+      loop.quit()
+    elif signal == "NotificationClosed":
+      loop.quit()
+
+  bus.signal_subscribe(None, INTERFACE, None, OBJECT_PATH, None, Gio.DBusSignalFlags.NONE, on_signal)
+  return loop, state
+
+
 def main() -> int:
+  waiter = sys.argv[1:] == ["--wait"]
   try:
     data = json.load(sys.stdin)
   except ValueError:
@@ -49,6 +95,11 @@ def main() -> int:
   icon = str(data.get("icon") or "")
   summary = str(data.get("summary") or "")
   body = str(data.get("body") or "")
+  window = str(data.get("focus") or "")
+  if not WINDOW.match(window):
+    window = ""
+  if window and not waiter:
+    return spawn_waiter(data)
 
   try:
     bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
@@ -57,9 +108,21 @@ def main() -> int:
     (capabilities,) = call(bus, "GetCapabilities", None, "(as)")
     if "body-markup" in capabilities:
       body = GLib.markup_escape_text(body)
-    call(bus, "Notify", GLib.Variant("(susssasa{sv}i)", (app, 0, icon, summary, body, [], {}, -1)), "(u)")
+    actions = ["default", str(data.get("actionLabel") or "Open")] if window and "actions" in capabilities else []
+    if actions:
+      loop, state = subscribe_click(bus, window)
+    (nid,) = call(bus, "Notify", GLib.Variant("(susssasa{sv}i)", (app, 0, icon, summary, body, actions, {}, -1)), "(u)")
   except GLib.Error:
+    if waiter:
+      print(1, flush=True)
     return 1
+  if waiter:
+    print("sent", flush=True)
+    if actions:
+      # Signals that arrive while Notify is in flight are queued in the main context, not lost
+      state["nid"] = nid
+      GLib.timeout_add_seconds(WAIT_SECONDS, loop.quit)
+      loop.run()
   return 0
 
 

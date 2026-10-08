@@ -39,6 +39,7 @@ def inside(work):
 
     calls = []
     markup = True
+    actions_cap = False
     xml = '''<node><interface name="org.freedesktop.Notifications">
       <method name="GetCapabilities"><arg type="as" direction="out"/></method>
       <method name="Notify">
@@ -57,7 +58,7 @@ def inside(work):
 
     def method(conn, sender, path, iface, name, params, invocation):
         if name == 'GetCapabilities':
-            invocation.return_value(GLib.Variant('(as)', (['body-markup'] if markup else [],)))
+            invocation.return_value(GLib.Variant('(as)', ((['body-markup'] if markup else []) + (['actions'] if actions_cap else []),)))
         else:
             calls.append(params.unpack())
             invocation.return_value(GLib.Variant('(u)', (len(calls),)))
@@ -91,7 +92,9 @@ def inside(work):
         mockbin = work / 'bin'
         mockbin.mkdir()
         mocks = {
-            'hyprctl': '#!/usr/bin/env python3\nimport os\nprint(os.environ.get("TEST_ACTIVE_WINDOW", "{}"))\n',
+            'hyprctl': ('#!/usr/bin/env python3\nimport json,os,sys\n'
+                'with open(os.environ["TEST_HYPR_LOG"], "a") as f: f.write(json.dumps(sys.argv[1:])+"\\n")\n'
+                'print(os.environ.get("TEST_CLIENTS", "[]") if sys.argv[1:2] == ["clients"] else os.environ.get("TEST_ACTIVE_WINDOW", "{}"))\n'),
             'omarchy-agent-usage-update': '#!/bin/sh\nexit 0\n',
             'notify-send': '#!/usr/bin/env python3\nimport json,os,sys\nwith open(os.environ["TEST_FIXED_LOG"], "a") as f: f.write(json.dumps(sys.argv[1:])+"\\n")\n',
         }
@@ -110,8 +113,37 @@ def inside(work):
                    QT_QPA_PLATFORMTHEME='', QT_ACCESSIBILITY='0',
                    NO_AT_BRIDGE='1', GIO_USE_VFS='local',
                    TEST_ARGV_LOG=str(work / 'argv.jsonl'),
-                   TEST_FIXED_LOG=str(work / 'fixed.jsonl'))
+                   TEST_FIXED_LOG=str(work / 'fixed.jsonl'),
+                   TEST_HYPR_LOG=str(work / 'hypr.jsonl'))
         env.pop('AGENT_PET_INTERNAL', None)
+
+        # Click-to-focus notification: the helper returns once sent; a detached child waits for the click
+        hypr_log = work / 'hypr.jsonl'
+        def focused_windows():
+            if not hypr_log.exists():
+                return []
+            return [a for a in map(json.loads, hypr_log.read_text().splitlines()) if a[:2] == ['dispatch', 'focuswindow']]
+        actions_cap = True
+        jump = {'summary': 'jump', 'body': 'b', 'focus': '0xabc123', 'actionLabel': '跳到终端'}
+        result = run([helper], input=json.dumps(jump), env=env)
+        assert result.returncode == 0, result
+        assert calls[-1][5] == ['default', '跳到终端'], calls[-1]
+        bus.emit_signal(None, '/org/freedesktop/Notifications', 'org.freedesktop.Notifications',
+                        'ActionInvoked', GLib.Variant('(us)', (len(calls), 'default')))
+        wait_for(lambda: focused_windows() == [['dispatch', 'focuswindow', 'address:0xabc123']], 'focus on click')
+        # Closing without a click ends the waiter without focusing
+        assert run([helper], input=json.dumps(jump), env=env).returncode == 0
+        bus.emit_signal(None, '/org/freedesktop/Notifications', 'org.freedesktop.Notifications',
+                        'NotificationClosed', GLib.Variant('(uu)', (len(calls), 2)))
+        assert run([helper], input=json.dumps(dict(jump, focus='0x1; rm -rf /')), env=env).returncode == 0
+        assert calls[-1][5] == [], calls[-1]
+        actions_cap = False
+        assert run([helper], input=json.dumps(jump), env=env).returncode == 0
+        assert calls[-1][5] == [], calls[-1]
+        time.sleep(0.5)
+        assert len(focused_windows()) == 1, focused_windows()
+        calls.clear()
+        print('PASS notification click: focus action, close, invalid address, no actions capability', flush=True)
         # Prevent the initial usage refresh without disabling event acceptance.
         usage = Path.home() / '.local/state/omarchy/agents/usage'
         usage.mkdir(parents=True)
@@ -208,6 +240,27 @@ def inside(work):
         assert len(calls) == 4
         assert 'test-project' not in fixed.read_text() and 'hello' not in fixed.read_text()
         print('PASS Service.qml exit-3 fallback: 3 fixed messages without private content', flush=True)
+
+        # Terminal window from the parent chain: kept across tool events, used by IPC jump
+        clients = json.dumps([{'pid': 1, 'address': '0xdead'}, {'pid': os.getpid(), 'address': '0xabc456'}])
+        send('claude', 'window', 'UserPromptSubmit', hookenv=dict(env, TEST_CLIENTS=clients))
+        assert entry('claude', 'window', 'thinking')['window'] == '0xabc456'
+        send('claude', 'window', 'PreToolUse', hookenv=dict(env, TEST_CLIENTS='[]'), tool_name='Bash', tool_input={'command': 'ls'})
+        assert entry('claude', 'window', 'working')['window'] == '0xabc456'
+        bad = json.dumps([{'pid': os.getpid(), 'address': '0x1; rm -rf /'}])
+        send('claude', 'bad-window', 'UserPromptSubmit', hookenv=dict(env, TEST_CLIENTS=bad))
+        assert entry('claude', 'bad-window', 'thinking')['window'] == ''
+        clients_calls = lambda: len([a for a in map(json.loads, hypr_log.read_text().splitlines()) if a[:1] == ['clients']])
+        n = clients_calls()
+        send('claude', 'window', 'PreToolUse', hookenv=dict(env, TEST_CLIENTS=clients), tool_name='Bash', tool_input={'command': 'pwd'})
+        assert entry('claude', 'window', 'working')['detail'] == 'pwd'
+        assert clients_calls() == n, 'PreToolUse must not query hyprctl clients'
+        send('claude', 'window', 'PermissionRequest', hookenv=dict(env, TEST_CLIENTS=clients), message='approve?')
+        wait_for(lambda: (state()['workStatus'] or {}).get('key') == 'claude:window', 'window session current')
+        r = run(['qs', 'ipc', '--pid', str(proc.pid), 'call', 'agent-pet', 'jump'], env=env)
+        assert r.stdout.strip() == 'ok', r
+        wait_for(lambda: ['dispatch', 'focuswindow', 'address:0xabc456'] in focused_windows(), 'IPC jump')
+        print('PASS terminal window: parent chain lookup, kept across tool events, invalid address, IPC jump', flush=True)
         logs = (work / 'qml.log').read_text()
         for unexpected in ['PeerClosedError', 'ReferenceError', 'TypeError', 'Failed to load configuration', 'is not a type']:
             assert unexpected not in logs, logs
@@ -366,6 +419,7 @@ ShellRoot {
     cfg = Path.home() / '.config/agent-pet/config.jsonc'
     cfg.write_text(json.dumps({'language': 'zh', 'automations': {
         'chime': {'enabled': True, 'from': 0, 'to': 23, 'anims': {'*': ['写代码']}, 'quietWhenBusy': False},
+        'focus': {'minutes': 0.05, 'breakMinutes': 0.05},
         'tasks': [
             {'name': 'probe', 'every': 3600, 'run': [str(probe), 'task'], 'say': '结果 {output} / {exit}', 'when': 'always'},
             {'name': 'remind', 'at': '03:00', 'say': '提醒', 'play': '吃午餐'},
@@ -477,6 +531,24 @@ else:
         wait_for(lambda: len(reminder_calls()) >= 2, 'reminder notifications')
         assert reminder_calls() == [('提醒', '旧提醒'), ('提醒', '喝水')], calls[notified:]
         print('PASS reminders: chat actions/validation/fire/notify/persist/late on start', flush=True)
+
+        # Focus mode: 3 s focus, 3 s break, notifications, persisted state, manual stop
+        assert call('agent-pet', 'focus', '') == 'ok'
+        assert state()['automations']['focus']['active']
+        assert json.loads((state_dir / 'focus.json').read_text())['focusUntil'] > 0
+        wait_for(lambda: any(x['text'].startswith('开始专注') for x in spoken()), 'focus start')
+        wait_for(lambda: any(x['text'].startswith('专注结束') and x['kind'] == 'reminder' for x in spoken()), 'focus end')
+        assert not state()['automations']['focus']['active']
+        wait_for(lambda: any(x['text'] == '休息结束，继续加油！' for x in spoken()), 'break end')
+        assert json.loads((state_dir / 'focus.json').read_text()) == {'focusUntil': 0, 'breakUntil': 0}
+        focus_calls = lambda: [c[4] for c in calls[notified:] if c[3] == '专注']
+        wait_for(lambda: len(focus_calls()) == 2, 'focus notifications')
+        assert call('agent-pet', 'focus', '10') == 'ok'
+        assert 9 <= state()['automations']['focus']['leftMinutes'] <= 10
+        assert call('agent-pet', 'focusStop') == 'ok'
+        wait_for(lambda: any(x['text'] == '好，这次专注先到这里' for x in spoken()), 'focus stopped')
+        assert call('agent-pet', 'focusStop') == 'off'
+        print('PASS focus mode: start/end/break/notify/persist/stop', flush=True)
         logs = (work / 'automation.log').read_text()
         for unexpected in ['ReferenceError', 'TypeError', 'is not a type', 'is not a function']:
             assert unexpected not in logs, logs

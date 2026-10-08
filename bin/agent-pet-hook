@@ -17,21 +17,41 @@ payload=$(cat)
 sock=${XDG_RUNTIME_DIR:-/run/user/$UID}/agent-pet/events.sock
 [[ -S $sock ]] && command -v socat >/dev/null || exit 0
 
-# 发事件的终端是否在前台：从本进程沿父进程链向上，看能否碰到 Hyprland 当前窗口的 pid
+# 本进程的父进程链（由近到远）：/proc/<pid>/stat 是 "pid (comm) state ppid ..."，
+# comm 可能含空格和括号：从最后一个 ") " 之后取 ppid
+chain=()
+pid=$$
+while [[ $pid =~ ^[0-9]+$ ]] && (( pid > 1 )) && (( ${#chain[@]} < 64 )); do
+  chain+=("$pid")
+  { read -r stat < "/proc/$pid/stat"; } 2>/dev/null || break
+  read -r _ pid _ <<<"${stat##*) }"
+done
+
+# 发事件的终端是否在前台：父进程链上能否碰到 Hyprland 当前窗口的 pid
 focused=false
 active_pid=$(hyprctl activewindow -j 2>/dev/null | jq -r '.pid // empty' 2>/dev/null)
 if [[ $active_pid =~ ^[0-9]+$ ]]; then
-  pid=$$
-  while [[ $pid =~ ^[0-9]+$ ]] && (( pid > 1 )); do
+  for pid in "${chain[@]}"; do
     if [[ $pid == "$active_pid" ]]; then focused=true; break; fi
-    # /proc/<pid>/stat 是 "pid (comm) state ppid ..."，comm 可能含空格和括号：从最后一个 ") " 之后取 ppid
-    { read -r stat < "/proc/$pid/stat"; } 2>/dev/null || break
-    read -r _ pid _ <<<"${stat##*) }"
+  done
+fi
+
+# 终端窗口地址（点气泡 / 通知跳回终端用）：父进程链上最近的一个 Hyprland 窗口。
+# 只在新一轮请求和需要人看的事件里查，工具调用事件不多跑一次 hyprctl；宠物按会话记住上一次的地址。
+# tmux / ssh 里的会话链上没有终端窗口，查不到就留空。
+window=""
+if [[ $payload =~ \"hook_event_name\"[[:space:]]*:[[:space:]]*\"(UserPromptSubmit|PermissionRequest|Elicitation|Notification|Stop|StopFailure)\" ]]; then
+  declare -A windows=()
+  while read -r wpid waddr; do
+    [[ $wpid =~ ^[0-9]+$ && $waddr =~ ^0x[0-9a-f]+$ ]] && windows[$wpid]=$waddr
+  done < <(hyprctl clients -j 2>/dev/null | jq -r '.[] | "\(.pid) \(.address)"' 2>/dev/null)
+  for pid in "${chain[@]}"; do
+    if [[ -n ${windows[$pid]:-} ]]; then window=${windows[$pid]}; break; fi
   done
 fi
 
 # 只挑需要的字段：tool_input / tool_response 可能很大
-event=$(jq -c --arg agent "$agent" --argjson focused "$focused" '{
+event=$(jq -c --arg agent "$agent" --argjson focused "$focused" --arg window "$window" '{
   agent: $agent,
   event: (.hook_event_name // ""),
   session: (.session_id // ""),
@@ -49,7 +69,8 @@ event=$(jq -c --arg agent "$agent" --argjson focused "$focused" '{
   # 会话记录路径（stepSummary.mode = transcript 时宠物自己去读）和 Stop 时的最后一条回复
   transcript: (.transcript_path // ""),
   lastMessage: ((.last_assistant_message // "") | tostring | .[0:2000]),
-  focused: $focused
+  focused: $focused,
+  window: $window
 }' 2>/dev/null <<<"$payload") || exit 0
 
 # 一行 JSON。printf 是 bash 内建命令，事件不会出现在任何进程的参数里。

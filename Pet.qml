@@ -127,6 +127,12 @@ Item {
   }
 
   function pickNext() {
+    // 专注模式：只从专注动画里挑，不走动、不转身
+    var focusPool = service.focusActive ? service.focusAnims : []
+    if (focusPool.length) {
+      play(Shared.pick(focusPool, anim), true)
+      return
+    }
     var roll = Math.random()
     var k = Shared.rollKind(roll, weights, { fixed: cfg.fixedEnabled === true })
     if (k === "idle") {
@@ -494,6 +500,14 @@ Item {
       service.showUsage(true)
       return
     }
+    if (leaf.action === "focus") {
+      service.startFocus("")
+      return
+    }
+    if (leaf.action === "focusStop") {
+      service.stopFocus()
+      return
+    }
     if (leaf.action === "home") {
       goHome()
       return
@@ -567,6 +581,19 @@ Item {
     nextSegment()
   }
 
+  // 点气泡：临时气泡（碎碎念 / 回复）有下一段就翻页，否则收起；工作状态气泡跳回对应终端
+  function bubbleClicked() {
+    if (tempBubble) {
+      if (bubbleQueue.length) nextSegment()
+      else {
+        bubbleTimer.stop()
+        tempBubble = null
+      }
+      return
+    }
+    if (wsBubble) service.jumpToSession(service.workStatus)
+  }
+
   function nextSegment() {
     var item = bubbleQueue[0]
     bubbleQueue = bubbleQueue.slice(1)
@@ -591,9 +618,18 @@ Item {
 
   readonly property var bubbleContent: tempBubble || wsBubble
 
+  // 气泡显示时也接收点击（overlay 的输入区域里包含它）
+  readonly property Region bubbleRegion: Region {
+    x: pet.x + bubble.x
+    y: pet.y + bubble.y
+    width: bubble.active ? bubble.width : 0
+    height: bubble.active ? bubble.height : 0
+  }
+
   Bubble {
     id: bubble
     content: pet.bubbleContent
+    onClicked: pet.bubbleClicked()
     memeDir: Qt.resolvedUrl("assets/memes/")
     readonly property var fontCfg: pet.service.config.bubbleFont || ({})
     // 没指定字体时：中文用 Noto Sans CJK SC，英文用 Noto Sans；没装则由 fontconfig 回退到其他字体

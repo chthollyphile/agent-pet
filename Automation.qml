@@ -5,7 +5,7 @@ import "lib/automation.mjs" as Auto
 import "lib/reminders.mjs" as Reminders
 import "lib/work-status.mjs" as WS
 
-// 自动化：整点报时、定时任务、事件触发规则、聊天设提醒（配置见 lib/automation.mjs 开头）。
+// 自动化：整点报时、定时任务、事件触发规则、聊天设提醒、专注模式（配置见 lib/automation.mjs 开头）。
 // 调度按墙上时钟每 15 秒检查一次，挂起恢复后不会错乱。
 // run 命令带 AGENT_PET_INTERNAL=1（命令里再调 claude / codex 不会回灌成工作状态事件），
 // 事件内容只走 stdin（JSON），不进进程参数。
@@ -31,11 +31,11 @@ Scope {
     return list.length ? list[Math.floor(Math.random() * list.length)] : ""
   }
 
-  // 说话 + 播动画；text 为空只播动画
-  function act(petId, text, anims) {
+  // 说话 + 播动画；text 为空只播动画。kind = "reminder" 时气泡停留 30 秒
+  function act(petId, text, anims, kind) {
     var name = pickAnim(anims)
     if (name) service.playRequest(petId, name)
-    if (text) service.speak(petId, text, "", "info")
+    if (text) service.speak(petId, text, "", kind || "info")
   }
 
   // ------------------------------------------------------------ 调度
@@ -46,9 +46,11 @@ Scope {
     triggeredOnStart: true
     onTriggered: {
       var out = Auto.tick(auto.sched, auto.norm, Date.now())
-      if (out.chime >= 0) auto.chime(out.chime)
+      // 专注期间不报时
+      if (out.chime >= 0 && !auto.focusActive) auto.chime(out.chime)
       out.tasks.forEach(function(key) { auto.runTask(key, false) })
       auto.checkReminders()
+      auto.checkFocus()
     }
   }
 
@@ -201,6 +203,97 @@ Scope {
     onLoadFailed: {
       auto.remindersLoaded = true
     }
+  }
+
+  // ------------------------------------------------------------ 专注模式（番茄钟）
+  // 专注期间：随机动画只挑 focus.anims、不走动；整点报时和定时碎碎念闭嘴；提醒、任务、规则照常。
+  // 结束时冒气泡 + 发通知，进入休息；休息结束再提醒一次。状态存在 stateDir，重启 shell 不丢。
+  property real focusUntil: 0
+  property real breakUntil: 0
+  property bool focusLoaded: false
+  readonly property bool focusActive: focusUntil > 0
+
+  function focusLeftMinutes() {
+    return focusActive ? Math.max(1, Math.ceil((focusUntil - Date.now()) / 60000)) : 0
+  }
+
+  function startFocus(minutes) {
+    var m = Number(minutes) > 0 && Number(minutes) <= 1440 ? Number(minutes) : norm.focus.minutes
+    focusUntil = Date.now() + m * 60000
+    breakUntil = 0
+    saveFocus()
+    scheduleFocus()
+    act("", service.tr("focusStart", { min: m }), norm.focus.anims.slice(0, 1))
+    return "ok"
+  }
+
+  function stopFocus() {
+    if (!focusActive && !breakUntil) return "off"
+    var wasFocus = focusActive
+    focusUntil = 0
+    breakUntil = 0
+    saveFocus()
+    scheduleFocus()
+    act("", service.tr(wasFocus ? "focusStopped" : "breakSkipped"), [])
+    return "ok"
+  }
+
+  function checkFocus() {
+    if (!focusLoaded) return
+    var f = norm.focus
+    var r = Auto.focusStep({ focusUntil: focusUntil, breakUntil: breakUntil }, Date.now(), f.breakMinutes)
+    if (r.event) {
+      focusUntil = r.state.focusUntil
+      breakUntil = r.state.breakUntil
+      saveFocus()
+      var late = r.late ? service.tr("remindLate") : ""
+      var text
+      if (r.event === "focusEnd") {
+        text = (f.breakMinutes > 0 ? service.tr("focusEnd", { min: f.breakMinutes }) : service.tr("focusEndNoBreak")) + late
+        act("", text, ["超大伸懒腰"], "reminder")
+      } else {
+        text = service.tr("breakEnd") + late
+        act("", text, ["点击回应-元气挥手"], "reminder")
+      }
+      if (f.notify) service.sendNotification(service.tr("focusTitle"), text, "done")
+    }
+    scheduleFocus()
+  }
+
+  function scheduleFocus() {
+    var next = focusUntil || breakUntil
+    if (!next) {
+      focusTimer.stop()
+      return
+    }
+    focusTimer.interval = Math.max(1000, Math.min(3600000, next - Date.now() + 200))
+    focusTimer.restart()
+  }
+
+  function saveFocus() {
+    focusFile.setText(JSON.stringify({ focusUntil: focusUntil, breakUntil: breakUntil }))
+  }
+
+  Timer {
+    id: focusTimer
+    onTriggered: auto.checkFocus()
+  }
+
+  FileView {
+    id: focusFile
+    path: auto.service ? auto.service.stateDir + "/focus.json" : ""
+    atomicWrites: true
+    printErrors: false
+    onLoaded: {
+      try {
+        var st = JSON.parse(text())
+        auto.focusUntil = Number(st.focusUntil) || 0
+        auto.breakUntil = Number(st.breakUntil) || 0
+      } catch (e) {}
+      auto.focusLoaded = true
+      auto.checkFocus()
+    }
+    onLoadFailed: auto.focusLoaded = true
   }
 
   // ------------------------------------------------------------ 运行命令
