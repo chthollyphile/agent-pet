@@ -147,6 +147,7 @@ Scope {
     var res = WS.applyEvent(wsStore, ev, Date.now())
     if (res.entered) notifyFor(res.entry)
     if (res.changed) refreshWorkStatus()
+    automation.onEvent(ev)
     var mode = summaryMode()
     if (mode === "model") {
       // 新一轮还没有总结时，第一步出现后稍等几秒先总结一次，不必等满 intervalSec
@@ -675,6 +676,12 @@ Scope {
     }
   }
 
+  // ------------------------------------------------------------ 自动化：整点报时、定时任务、事件规则
+  Automation {
+    id: automation
+    service: root
+  }
+
   // ------------------------------------------------------------ IPC：omarchy-shell agent-pet <method> [arg]
   IpcHandler {
     target: "agent-pet"
@@ -701,6 +708,13 @@ Scope {
       root.reloadConfig()
       return "ok"
     }
+    function chime(): string {
+      automation.chime(new Date().getHours())
+      return "ok"
+    }
+    function task(name: string): string {
+      return automation.runTask(name, true)
+    }
     function toggle(): string {
       root.hidden = !root.hidden
       return root.hidden ? "hidden" : "shown"
@@ -725,7 +739,14 @@ Scope {
         autoModel: root.autoModelFor(),
         stepSummary: root.summaryMode(),
         lang: root.lang,
-        whisperAuto: root.config.whisperAuto === true
+        whisperAuto: root.config.whisperAuto === true,
+        automations: {
+          chime: automation.norm.chime.enabled,
+          tasks: automation.norm.tasks.map(function(t) { return t.key }),
+          rules: automation.norm.rules.map(function(r) { return r.key }),
+          errors: automation.norm.errors,
+          running: Object.keys(automation.taskRunning)
+        }
       })
     }
   }

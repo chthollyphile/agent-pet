@@ -326,5 +326,14 @@
     "file": "",
     "size": 14
   },
-  "layer": "top"
+  "layer": "top",
+  "automations": {
+    "chime": {
+      "enabled": false,
+      "from": 8,
+      "to": 23
+    },
+    "tasks": [],
+    "rules": []
+  }
 }

@@ -39,6 +39,11 @@ extra=(
 )
 
 sha=$(git -C "$ROOT" rev-parse --verify "$ref^{commit}")
+# local/automation 分支的自动化功能只在本地用，不进插件市场：含 Automation.qml 的提交拒绝导出
+if git -C "$ROOT" cat-file -e "$sha:Automation.qml" 2>/dev/null; then
+  echo "错误：$ref 包含本地自动化功能（Automation.qml），不能导出。请用 --ref main" >&2
+  exit 1
+fi
 [[ $ref != HEAD || -z $(git -C "$ROOT" status --porcelain) ]] || echo "注意：工作区有未提交的改动，只导出 HEAD" >&2
 
 mkdir -p "$target"

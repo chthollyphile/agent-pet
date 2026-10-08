@@ -217,6 +217,7 @@ def inside(work):
         proc.wait(timeout=5)
         proc = None
         check_chat(work, env)
+        check_automation(work, env)
     finally:
         if proc:
             proc.terminate()
@@ -303,6 +304,119 @@ ShellRoot {
         finally:
             proc.terminate()
             proc.wait(timeout=5)
+
+
+def check_automation(work, env):
+    """Tasks, rules and the chime through the production Service, observing speak/play signals."""
+    probe = work / 'bin' / 'automation-probe'
+    probe.write_text("""#!/usr/bin/python3
+import json, os, sys
+record = {"argv": sys.argv[1:], "input": sys.stdin.read(), "cwd": os.getcwd(),
+          "internal": os.environ.get("AGENT_PET_INTERNAL")}
+with open(os.environ["TEST_AUTOMATION_LOG"], "a") as f: f.write(json.dumps(record) + "\\n")
+print("probe-" + sys.argv[1])
+""")
+    probe.chmod(0o755)
+    fixture = work / 'automation-fixture'
+    fixture.mkdir()
+    (fixture / 'Commons').symlink_to(ROOT / 'Commons')
+    (fixture / 'shell.qml').write_text('''import Quickshell
+import Quickshell.Io
+import "''' + ROOT.as_uri() + '''" as Pet
+ShellRoot {
+  id: shellRoot
+  property var spokenLog: []
+  property var playedLog: []
+  Pet.Service {
+    id: service
+    onSpeak: (petId, text, meme, kind) => shellRoot.spokenLog = shellRoot.spokenLog.concat([{ pet: petId, text: text, kind: kind }])
+    onPlayRequest: (petId, name) => shellRoot.playedLog = shellRoot.playedLog.concat([name])
+  }
+  IpcHandler {
+    target: "runtime-test"
+    function spoken(): string { return JSON.stringify(shellRoot.spokenLog) }
+    function played(): string { return JSON.stringify(shellRoot.playedLog) }
+  }
+}
+''')
+    log = work / 'automation.jsonl'
+    env = dict(env, TEST_AUTOMATION_LOG=str(log))
+    Path('/tmp/test-project').mkdir(exist_ok=True)
+    cfg = Path.home() / '.config/agent-pet/config.jsonc'
+    cfg.write_text(json.dumps({'language': 'zh', 'automations': {
+        'chime': {'enabled': True, 'from': 0, 'to': 23, 'anims': {'*': ['写代码']}, 'quietWhenBusy': False},
+        'tasks': [
+            {'name': 'probe', 'every': 3600, 'run': [str(probe), 'task'], 'say': '结果 {output} / {exit}', 'when': 'always'},
+            {'name': 'remind', 'at': '03:00', 'say': '提醒', 'play': '吃午餐'},
+            {'name': 'slow', 'every': 3600, 'run': 'sleep 100', 'timeoutSec': 1, 'say': 'slow {exit}', 'when': 'always'},
+        ],
+        'rules': [
+            {'name': 'commit', 'event': 'PostToolUse', 'tool': 'Bash', 'detail': '^git commit',
+             'run': [str(probe), 'rule'], 'say': '{project} 提交 {output}', 'play': '放烟花', 'cooldownSec': 60},
+            {'name': 'done', 'event': 'Stop', 'agent': 'codex', 'say': '{agentName} 完成'},
+            {'name': 'broken', 'event': 'Stop', 'detail': '('},
+        ],
+    }}))
+    with (work / 'automation.log').open('w') as qlog:
+        proc = subprocess.Popen(['qs', '-p', str(fixture), '--no-color'], env=env, stdout=qlog, stderr=qlog)
+    try:
+        def call(target, method, *args):
+            r = run(['qs', 'ipc', '--pid', str(proc.pid), 'call', target, method, *args], env=env)
+            return r.stdout.strip() if r.returncode == 0 else None
+        def state():
+            out = call('agent-pet', 'state')
+            return json.loads(out) if out else None
+        def spoken():
+            return json.loads(call('runtime-test', 'spoken') or '[]')
+        def records():
+            return [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
+        s = wait_for(lambda: (state() or {}).get('ready') and state(), 'automation fixture ready')
+        auto = s['automations']
+        assert auto['chime'] and auto['tasks'] == ['probe', 'remind', 'slow'] and auto['rules'] == ['commit', 'done'], auto
+        assert any('broken' in e for e in auto['errors']), auto
+
+        # every task: runs once on start, then manually through IPC
+        wait_for(lambda: any(x['text'] == '结果 probe-task / 0' for x in spoken()), 'task on start')
+        assert call('agent-pet', 'task', 'probe') == 'ok'
+        wait_for(lambda: len([r for r in records() if r['argv'] == ['task']]) == 2, 'manual task')
+        assert all(r['internal'] == '1' for r in records())
+        assert call('agent-pet', 'task', 'missing') == 'no-task'
+        assert call('agent-pet', 'task', 'remind') == 'ok'
+        wait_for(lambda: any(x['text'] == '提醒' for x in spoken()), 'reminder')
+        # timeout: SIGTERM after 1 s, exit code is reported
+        wait_for(lambda: any(x['text'].startswith('slow ') for x in spoken()), 'task timeout')
+        assert not state()['automations']['running']
+        print('PASS automation tasks: start/manual/at reminder/timeout, AGENT_PET_INTERNAL set', flush=True)
+
+        hook = str(ROOT / 'bin/agent-pet-hook')
+        def send(agent, event, **extra):
+            payload = dict(hook_event_name=event, session_id='auto', cwd='/tmp/test-project', **extra)
+            assert run([hook, agent], input=json.dumps(payload), env=env).returncode == 0
+        private = 'PRIVATE-AUTOMATION-SENTINEL'
+        send('claude', 'PostToolUse', tool_name='Bash', tool_input={'command': 'git status'})
+        send('claude', 'PostToolUse', tool_name='Bash', tool_input={'command': 'git commit -m ' + private})
+        wait_for(lambda: any(x['text'] == 'test-project 提交 probe-rule' for x in spoken()), 'rule fired')
+        send('claude', 'PostToolUse', tool_name='Bash', tool_input={'command': 'git commit -m again'})
+        send('codex', 'Stop', last_assistant_message='bye')
+        wait_for(lambda: any(x['text'] == 'Codex 完成' for x in spoken()), 'say-only rule')
+        rule_runs = [r for r in records() if r['argv'] == ['rule']]
+        assert len(rule_runs) == 1, rule_runs  # git status no match, second commit in cooldown
+        assert private in rule_runs[0]['input'] and private not in json.dumps(rule_runs[0]['argv'])
+        assert json.loads(rule_runs[0]['input'])['event'] == 'PostToolUse'
+        assert rule_runs[0]['cwd'] == '/tmp/test-project'
+        assert '放烟花' in json.loads(call('runtime-test', 'played'))
+        print('PASS automation rules: match/cooldown/stdin event/cwd/say-only', flush=True)
+
+        assert call('agent-pet', 'chime') == 'ok'
+        wait_for(lambda: any(x['text'].endswith('点啦～') for x in spoken()), 'chime')
+        assert '写代码' in json.loads(call('runtime-test', 'played'))
+        print('PASS automation chime via IPC', flush=True)
+        logs = (work / 'automation.log').read_text()
+        for unexpected in ['ReferenceError', 'TypeError', 'is not a type', 'is not a function']:
+            assert unexpected not in logs, logs
+    finally:
+        proc.terminate()
+        proc.wait(timeout=5)
 
 
 def main():
