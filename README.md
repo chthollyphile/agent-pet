@@ -12,7 +12,7 @@ The character, animations, and core pet behavior are ported from [dsh-pet](https
 
 - **Pet behavior**: idling, random actions, turning, walking, click reactions, and physics-based dragging and throwing.
 - **Work status**: receives events through Claude Code / Codex hooks and switches between six states (thinking, working, reviewing results, waiting, success, error). The bubble can show the project name, the current tool and command, and either the agent's own step narration or a model-generated step summary.
-- **Attention alerts**: shows a bubble when approval is needed, when a task completes, or when it fails, and sends a desktop notification (project name and message when `python-gobject` / `gi` is available; otherwise fixed agent-name and status text) if the terminal that sent the event is not focused.
+- **Attention alerts**: shows a bubble when approval is needed, when a task completes, or when it fails, and sends a desktop notification with only the agent name and status if the terminal that sent the event is not focused.
 - **Usage**: plays an animation for the most constrained limit window and lists each window's usage and reset countdown. Uses Omarchy's `omarchy.agents` data on Omarchy and a built-in collector elsewhere.
 - **Murmurs and chat**: generated with `claude -p` or `codex exec`. By default the pet only calls a model when you explicitly ask it to.
 - **English and Chinese UI**: chosen automatically from the system locale, or set manually.
@@ -23,7 +23,6 @@ The character, animations, and core pet behavior are ported from [dsh-pet](https
 - `qt6-imageformats` for WebP decoding in Qt (Arch: `sudo pacman -S qt6-imageformats`). Restart any running Quickshell instance after installing it.
 - `jq`, `socat`, `notify-send`
 - `python3` for usage collection outside Omarchy
-- Optional: `python-gobject` (PyGObject / `gi`) for D-Bus notifications with project names and messages; without it, notifications fall back to fixed text.
 - Claude Code and/or the Codex CLI for work-status integration
 
 ## Installation
@@ -172,7 +171,7 @@ omarchy-shell agent-pet reload
 - **Data forwarded by hooks** is limited to the event name, session ID, project path, tool name, the first line of the tool arguments (up to 120 characters), notification text (up to 200), the first 300 characters of the turn's prompt, the final reply when a turn ends (up to 2000), and the transcript path. Hook transport stays on your machine; model step summaries send some of this content to a model provider (see below).
 - **Session transcripts** are read only when `stepSummary.mode = "transcript"`, and only the last 400 KB each time.
 - **Model step summaries**: enabling `stepSummary.mode = "model"` sends the request excerpt (up to 300 characters) and summaries of the last 8 actions to the provider configured in `autoModel`. This may be a different provider from the one used by the current Claude Code / Codex session.
-- **Process arguments carry no private content**, because other local users can read process command lines. Hook events travel through a pipe and `$XDG_RUNTIME_DIR/agent-pet/events.sock` (parent directory mode 700); `socat` arguments contain only the socket path. Prompts and chat history reach `claude` / `codex` on standard input, with the system prompt in a private file. Notification project names and messages reach `bin/agent-pet-notify` on standard input and are sent over D-Bus; without `gi`, `notify-send` receives only fixed text. Text you pass yourself to `omarchy-shell agent-pet say` or `chat` is part of that command’s line.
+- **Process arguments carry no private content**, because other local users can read process command lines. Hook events travel through a pipe and `$XDG_RUNTIME_DIR/agent-pet/events.sock` (parent directory mode 700); `socat` arguments contain only the socket path. Prompts and chat history reach `claude` / `codex` on standard input, with the system prompt in a private file. Desktop notifications carry only the agent name and status, never project names or messages, because notification servers such as Omarchy’s may pass notification text to other processes as arguments. Text you pass yourself to `omarchy-shell agent-pet say` or `chat` is part of that command’s line.
 - **`~/.local/state/agent-pet/`** (chat history, prompt files) is kept at mode 700.
 - **Network access**: the built-in usage collector queries Claude / Codex rate limits; on Omarchy, the pet reuses its collector’s data by default. Limit queries only read usage and do not consume quota. Enabling or manually triggering model features makes the relevant CLI contact its model provider.
 
@@ -204,7 +203,7 @@ Notes:
 
 The built assets under `assets/` are committed. Every committed version stays in the history that each install clones, so commit asset changes only when they are final.
 
-Run `python3 tools/test-runtime.py` on a Wayland desktop to check QML loading, hook delivery and socket recycling, parent-process parsing, D-Bus notifications, and private content staying out of process arguments. It also needs `bwrap`, `dbus-run-session`, and `python-gobject`. The test temporarily shows a second pet, isolates configuration and notifications, disables network access, and keeps logs under `/tmp/agent-pet-runtime-*`.
+Run `python3 tools/test-runtime.py` on a Wayland desktop to check QML loading, hook delivery and socket recycling, parent-process parsing, notifications, and private content staying out of process arguments. It also needs `bwrap` and `dbus-run-session`. The test temporarily shows a second pet, isolates configuration and notifications, disables network access, and keeps logs under `/tmp/agent-pet-runtime-*`.
 
 ### Publishing the Omarchy plugin
 
@@ -232,7 +231,6 @@ To deploy locally, run `omarchy plugin update chthollyphile.agent-pet`, then `om
 | `lib/work-status.mjs`, `lib/usage.mjs`, `lib/i18n.mjs`, `lib/jsonc.mjs` | Event aggregation, usage parsing, UI strings, JSONC parsing |
 | `shell.qml`, `Commons/` | Standalone entry point and default theme |
 | `install.sh` | Installer |
-| `bin/agent-pet-notify` | Reads notifications from stdin, sends them over D-Bus, and escapes body markup |
 | `bin/` | Hook bridge and installer, transcript reader, built-in usage collector |
 | `assets/` | Default configuration, animations (`webp/`), stickers (`memes/`), and notification icons (`pic/`) |
 | `tools/` | Build scripts for assets, shared logic, and default configuration; Omarchy plugin export |

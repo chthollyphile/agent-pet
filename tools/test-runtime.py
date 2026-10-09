@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Linux integration checks using real QML/hooks and a private notification bus.
+"""Linux integration checks using real QML/hooks and a private session bus.
 
 Run: python3 tools/test-runtime.py
-Needs a Wayland desktop, qs, socat, jq, bwrap, dbus-run-session, and Python gi.
+Needs a Wayland desktop, qs, socat, jq, bwrap, and dbus-run-session.
 All test data is under /tmp; bubblewrap masks the user's home and disables
 networking. A second pet appears temporarily on the current desktop.
 """
@@ -14,7 +14,6 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
-import threading
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,59 +34,12 @@ def wait_for(fn, description):
 
 
 def inside(work):
-    from gi.repository import Gio, GLib
-
-    calls = []
-    markup = True
-    xml = '''<node><interface name="org.freedesktop.Notifications">
-      <method name="GetCapabilities"><arg type="as" direction="out"/></method>
-      <method name="Notify">
-        <arg type="s" direction="in"/><arg type="u" direction="in"/>
-        <arg type="s" direction="in"/><arg type="s" direction="in"/>
-        <arg type="s" direction="in"/><arg type="as" direction="in"/>
-        <arg type="a{sv}" direction="in"/><arg type="i" direction="in"/>
-        <arg type="u" direction="out"/>
-      </method>
-    </interface></node>'''
-    bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
-    bus.call_sync('org.freedesktop.DBus', '/org/freedesktop/DBus',
-                  'org.freedesktop.DBus', 'RequestName',
-                  GLib.Variant('(su)', ('org.freedesktop.Notifications', 0)),
-                  GLib.VariantType('(u)'), Gio.DBusCallFlags.NONE, 5000, None)
-
-    def method(conn, sender, path, iface, name, params, invocation):
-        if name == 'GetCapabilities':
-            invocation.return_value(GLib.Variant('(as)', (['body-markup'] if markup else [],)))
-        else:
-            calls.append(params.unpack())
-            invocation.return_value(GLib.Variant('(u)', (len(calls),)))
-
-    info = Gio.DBusNodeInfo.new_for_xml(xml)
-    registration = bus.register_object('/org/freedesktop/Notifications', info.interfaces[0], method, None, None)
-    loop = GLib.MainLoop()
-    thread = threading.Thread(target=loop.run, daemon=True)
-    thread.start()
     proc = None
     try:
         body = '<b>hello & "world"</b> \'你好\''
-        payload = {'summary': 'project <name>', 'body': body}
-        helper = str(ROOT / 'bin/agent-pet-notify')
-        result = run([helper], input=json.dumps(payload))
-        assert result.returncode == 0, result.stderr
-        assert calls[-1][3] == payload['summary']
-        assert calls[-1][4] == '&lt;b&gt;hello &amp; &quot;world&quot;&lt;/b&gt; &apos;你好&apos;', calls[-1]
-        markup = False
-        assert run([helper], input=json.dumps(payload)).returncode == 0
-        assert calls[-1][4] == body
-        for invalid in ['{', '[]', 'null']:
-            assert run([helper], input=invalid).returncode == 2
-        assert run([sys.executable, '-S', helper], input='{}').returncode == 3
-        print('PASS notification helper: markup/plain text, exit 2, exit 3', flush=True)
-        markup = True
-        calls.clear()
 
         # Mock only external desktop/collector commands, keeping the real hook,
-        # socat, helper, Service.qml, and remaining QML components in use.
+        # socat, Service.qml, and remaining QML components in use.
         mockbin = work / 'bin'
         mockbin.mkdir()
         mocks = {
@@ -179,12 +131,16 @@ def inside(work):
             wait_for(lambda: (state()['sessions'].get('claude:recycle') or {}).get('detail') == 'step-' + str(i), 'recycle delivery')
         print('PASS socket recycling: 505 sequential hook deliveries', flush=True)
 
+        fixed = work / 'fixed.jsonl'
+        def notifications(count):
+            return lambda: fixed.exists() and len(fixed.read_text().splitlines()) == count
         for i in range(3):
             send('claude', 'notification-' + str(i), 'PermissionRequest', message=body)
-        wait_for(lambda: len(calls) == 3, 'notification queue')
-        assert all('test-project' in c[3] and c[4] == GLib.markup_escape_text(body) for c in calls), calls
-        assert not (work / 'fixed.jsonl').exists(), 'Successful D-Bus incorrectly fell back'
-        print('PASS Service.qml notification queue: 3 full D-Bus messages, no fallback', flush=True)
+        wait_for(notifications(3), 'notifications')
+        sent = [json.loads(line) for line in fixed.read_text().splitlines()]
+        assert all(args[-1] == 'Claude Code · Needs your approval' for args in sent), sent
+        assert 'test-project' not in fixed.read_text() and 'hello' not in fixed.read_text()
+        print('PASS Service.qml notifications: 3 fixed messages without project or message', flush=True)
 
         private = 'PRIVATE-CONTENT-SENTINEL'
         send('codex', 'private-hook', 'UserPromptSubmit', prompt=private)
@@ -192,22 +148,11 @@ def inside(work):
         send('codex', 'private-hook', 'PreToolUse', tool_name='Bash', tool_input={'command': private})
         assert entry('codex', 'private-hook', 'working')['detail'] == private
         send('codex', 'private-hook', 'Stop', last_assistant_message=private, message=private)
-        wait_for(lambda: len(calls) == 4, 'private notification')
-        assert calls[-1][4] == private
-        assert private not in (work / 'argv.jsonl').read_text()
-        assert body not in (work / 'argv.jsonl').read_text()
+        wait_for(notifications(4), 'private notification')
+        assert json.loads(fixed.read_text().splitlines()[-1])[-1] == 'Codex · Task complete'
+        for log in [work / 'argv.jsonl', fixed]:
+            assert private not in log.read_text() and body not in log.read_text()
         print('PASS hook/notification argv: prompt, tool input, final reply and message stay out', flush=True)
-
-        # Hide gi from helper children to exercise the real QML exit-3 fallback.
-        (mockbin / 'python3').write_text('#!/bin/sh\nexec /usr/bin/python3 -S "$@"\n')
-        (mockbin / 'python3').chmod(0o755)
-        for i in range(3, 6):
-            send('claude', 'notification-' + str(i), 'PermissionRequest', message=body)
-        fixed = work / 'fixed.jsonl'
-        wait_for(lambda: fixed.exists() and len(fixed.read_text().splitlines()) == 3, 'fixed notification fallback')
-        assert len(calls) == 4
-        assert 'test-project' not in fixed.read_text() and 'hello' not in fixed.read_text()
-        print('PASS Service.qml exit-3 fallback: 3 fixed messages without private content', flush=True)
         logs = (work / 'qml.log').read_text()
         for unexpected in ['PeerClosedError', 'ReferenceError', 'TypeError', 'Failed to load configuration', 'is not a type']:
             assert unexpected not in logs, logs
@@ -225,9 +170,6 @@ def inside(work):
             except subprocess.TimeoutExpired:
                 proc.kill()
                 proc.wait()
-        bus.unregister_object(registration)
-        loop.quit()
-        thread.join(timeout=2)
 
 
 def check_chat(work, env):

@@ -12,7 +12,7 @@ Agent Pet 是一只运行在 Quickshell 上的桌面宠物，会随 Claude Code 
 
 - **桌宠行为**：待机、随机动作、转向、行走、点击回应，以及带物理效果的拖拽与甩抛。
 - **工作状态联动**：通过 Claude Code / Codex 的 hooks 接收事件，在思考、工作、整理、等待、成功、出错 6 种状态之间切换动画。气泡可显示项目名、当前工具与命令摘要，以及 agent 自己写的步骤说明或模型生成的步骤总结。
-- **等待提醒**：需要确认、任务完成或出错时显示气泡；发出事件的终端不在前台时，同时发送系统通知（有 `python-gobject` / `gi` 时显示项目名和消息；没有时只显示 agent 名称和状态等固定文字）。
+- **等待提醒**：需要确认、任务完成或出错时显示气泡；发出事件的终端不在前台时，同时发送只含 agent 名称和状态的系统通知。
 - **用量显示**：按最紧张的额度窗口播放对应档位的动画，气泡列出每个窗口的用量和重置倒计时。Omarchy 上直接使用 `omarchy.agents` 的数据，其他环境使用内置采集。
 - **碎碎念与对话**：通过 `claude -p` 或 `codex exec` 生成。默认只在用户显式触发时调用模型。
 - **双语界面**：根据系统语言自动选择中文或英文，也可以手动指定。
@@ -23,7 +23,6 @@ Agent Pet 是一只运行在 Quickshell 上的桌面宠物，会随 Claude Code 
 - `qt6-imageformats`：Qt 的 WebP 解码插件（Arch：`sudo pacman -S qt6-imageformats`）。安装后需要重启正在运行的 Quickshell。
 - `jq`、`socat`、`notify-send`
 - 非 Omarchy 环境下采集用量需要 `python3`
-- 可选：`python-gobject`（PyGObject / `gi`），用于包含项目名和消息的 D-Bus 通知；缺少时退回固定文字通知。
 - 工作状态联动需要 Claude Code 和/或 Codex CLI
 
 ## 安装
@@ -172,7 +171,7 @@ omarchy-shell agent-pet reload
 - **hooks 转发的数据**：只有事件名、会话 ID、项目路径、工具名、工具参数第一行（最多 120 字）、通知文本（最多 200 字）、本轮请求的前 300 字、结束时的最后一条回复（最多 2000 字），以及会话记录路径。hook 传输本身仅限本机；启用模型步骤总结后，部分内容会发给模型提供方（见下文）。
 - **会话记录**：仅在 `stepSummary.mode = "transcript"` 时读取，每次只读取文件末尾 400 KB。
 - **模型步骤总结**：启用 `stepSummary.mode = "model"` 后，本轮请求摘录（最多 300 字符）和最近 8 步操作摘要会发送给 `autoModel` 配置的提供方。该提供方可能不是当前 Claude Code / Codex 会话使用的那家。
-- **进程参数里不放私密内容**：本机其他用户能看到进程的命令行。hook 事件经管道和 `$XDG_RUNTIME_DIR/agent-pet/events.sock` 传递（父目录权限 700），`socat` 参数只含 socket 路径；提示词和对话历史通过标准输入交给 `claude` / `codex`，系统提示词写在私有文件里。通知的项目名和消息通过标准输入交给 `bin/agent-pet-notify`，再经 D-Bus 发送；没有 `gi` 时退回 `notify-send`，只传固定文字。你自己通过 `omarchy-shell agent-pet say` 或 `chat` 传入的文字会出现在该命令的命令行里。
+- **进程参数里不放私密内容**：本机其他用户能看到进程的命令行。hook 事件经管道和 `$XDG_RUNTIME_DIR/agent-pet/events.sock` 传递（父目录权限 700），`socat` 参数只含 socket 路径；提示词和对话历史通过标准输入交给 `claude` / `codex`，系统提示词写在私有文件里。系统通知只含 agent 名称和状态，不含项目名和消息，因为 Omarchy 等通知服务可能把通知文字作为参数传给其他进程。你自己通过 `omarchy-shell agent-pet say` 或 `chat` 传入的文字会出现在该命令的命令行里。
 - **`~/.local/state/agent-pet/`**（对话记录、提示词文件）权限保持为 700。
 - **网络访问**：内置用量采集会查询 Claude / Codex 的额度；Omarchy 上默认复用其采集结果。额度查询只读取用量，不消耗额度。启用或手动触发模型功能时，相应 CLI 会联系模型提供方。
 
@@ -204,7 +203,7 @@ omarchy plugin enable chthollyphile.agent-pet
 
 构建出的 `assets/` 纳入 git。每次提交的素材都会永久留在历史里，每次安装都要 clone 下来，因此只在素材定稿后提交。
 
-在 Wayland 桌面运行 `python3 tools/test-runtime.py`，可验证 QML 加载、hook 传输与 socket 重建、父进程链解析、D-Bus 通知，以及私密内容不进入进程参数。还需安装 `bwrap`、`dbus-run-session` 和 `python-gobject`。测试会临时显示第二只宠物，隔离配置和通知、禁用网络，并将日志保存在 `/tmp/agent-pet-runtime-*`。
+在 Wayland 桌面运行 `python3 tools/test-runtime.py`，可验证 QML 加载、hook 传输与 socket 重建、父进程链解析、系统通知，以及私密内容不进入进程参数。还需安装 `bwrap` 和 `dbus-run-session`。测试会临时显示第二只宠物，隔离配置和通知、禁用网络，并将日志保存在 `/tmp/agent-pet-runtime-*`。
 
 ### 发布 Omarchy 插件
 
@@ -232,7 +231,6 @@ git -C ../omarchy-agent-pet push
 | `lib/work-status.mjs`、`lib/usage.mjs`、`lib/i18n.mjs`、`lib/jsonc.mjs` | 事件聚合、用量解析、界面文本、JSONC 解析 |
 | `shell.qml`、`Commons/` | 独立模式的入口与默认主题 |
 | `install.sh` | 安装脚本 |
-| `bin/agent-pet-notify` | 从标准输入读取通知，经 D-Bus 发送并转义正文 markup |
 | `bin/` | hook 转发与安装、会话记录读取、内置用量采集 |
 | `assets/` | 默认配置、动画（`webp/`）、表情包（`memes/`）与通知图标（`pic/`） |
 | `tools/` | 素材、共享逻辑、默认配置的构建脚本，以及 Omarchy 插件导出 |
